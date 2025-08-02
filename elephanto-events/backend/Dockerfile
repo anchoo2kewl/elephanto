@@ -3,7 +3,13 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-RUN apk add --no-cache git ca-certificates
+# Add multiple repository mirrors for better connectivity
+RUN echo "https://mirror.leaseweb.com/alpine/v3.20/main" > /etc/apk/repositories && \
+    echo "https://mirror.leaseweb.com/alpine/v3.20/community" >> /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/main" >> /etc/apk/repositories && \
+    echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/community" >> /etc/apk/repositories
+
+RUN apk update && apk add --no-cache git ca-certificates
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
