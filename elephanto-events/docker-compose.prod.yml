@@ -49,7 +49,7 @@ services:
       - elephanto_network
 
   frontend:
-    image: anchoo2kewl/elephanto-frontend:latest
+    image: anchoo2kewl/elephanto-frontend:production
     container_name: elephanto_frontend
     ports:
       - "3000:3000"
