@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: elephanto_postgres
+    environment:
+      POSTGRES_USER: elephanto
+      POSTGRES_PASSWORD: elephanto123
+      POSTGRES_DB: elephanto_events
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U elephanto -d elephanto_events"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - elephanto_network
+
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: elephanto_mailpit
+    ports:
+      - "8025:8025"  # Web interface
+      - "1025:1025"  # SMTP
+    networks:
+      - elephanto_network
+
+  backend:
+    image: anchoo2kewl/elephanto-backend:latest
+    container_name: elephanto_backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - elephanto_network
+
+  frontend:
+    image: anchoo2kewl/elephanto-frontend:latest
+    container_name: elephanto_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - elephanto_network
+
+volumes:
+  postgres_data:
+
+networks:
+  elephanto_network:
+    driver: bridge

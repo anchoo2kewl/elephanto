@@ -1,5 +1,5 @@
-# Build stage - using Ubuntu for better package availability
-FROM node:18-bullseye AS builder
+# Build stage
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
@@ -28,8 +28,8 @@ RUN npm run build
 RUN echo "Build complete! Checking output:"
 RUN find dist/ -name "*.js" -exec grep -l "localhost\|elephantoevents" {} \; || echo "No API URLs found"
 
-# Production stage - using Debian for consistency
-FROM nginx:1.25-bullseye
+# Production stage
+FROM nginx:alpine
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf

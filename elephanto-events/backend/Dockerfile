@@ -1,13 +1,9 @@
-# Build stage - using Ubuntu for better package availability
-FROM golang:1.21-bullseye AS builder
+# Build stage
+FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies using apt (more reliable than Alpine apk)
-RUN apt-get update && apt-get install -y \
-    git \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache git ca-certificates
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
@@ -17,13 +13,10 @@ COPY .env .env
 
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Final stage - using Debian slim for better compatibility
-FROM debian:bullseye-slim
+# Final stage
+FROM alpine:latest
 
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk --no-cache add ca-certificates curl
 
 WORKDIR /root/
 
