@@ -30,8 +30,8 @@ services:
 
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend/Dockerfile
     container_name: elephanto_backend
     ports:
       - "8080:8080"
@@ -56,11 +56,11 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:8080}
+    env_file:
+      - .env
     container_name: elephanto_frontend
     ports:
       - "3000:3000"
-    env_file:
-      - .env
     depends_on:
       backend:
         condition: service_healthy

@@ -4,6 +4,9 @@
 .env.production
 .env.staging
 
+# Keep sample file
+!.env.sample
+
 # Dependencies
 node_modules/
 **/node_modules/
