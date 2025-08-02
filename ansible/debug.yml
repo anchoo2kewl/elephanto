@@ -1,0 +1,57 @@
+---
+- name: Debug deployment issues
+  hosts: elephanto_servers
+  gather_facts: no
+  vars:
+    app_dir: /opt/elephanto-events
+  
+  tasks:
+    - name: Check nginx status
+      shell: systemctl status nginx
+      register: nginx_status
+      become: yes
+      
+    - name: Show nginx status
+      debug:
+        msg: "{{ nginx_status.stdout }}"
+        
+    - name: Check if nginx is listening on port 80
+      shell: ss -tulpn | grep :80
+      register: port_80
+      
+    - name: Show port 80 status
+      debug:
+        msg: "{{ port_80.stdout }}"
+        
+    - name: Check docker containers
+      shell: cd {{ app_dir }}/elephanto-events && docker-compose ps
+      register: containers
+      
+    - name: Show container status
+      debug:
+        msg: "{{ containers.stdout }}"
+        
+    - name: Check if backend is responding
+      shell: curl -s http://localhost:8080/api/health || echo "Backend not responding"
+      register: backend_health
+      
+    - name: Show backend health
+      debug:
+        msg: "{{ backend_health.stdout }}"
+        
+    - name: Check if frontend is responding
+      shell: curl -s -I http://localhost:3000 || echo "Frontend not responding"
+      register: frontend_health
+      
+    - name: Show frontend health
+      debug:
+        msg: "{{ frontend_health.stdout }}"
+        
+    - name: Check nginx error logs
+      shell: tail -20 /var/log/nginx/error.log
+      register: nginx_errors
+      become: yes
+      
+    - name: Show nginx errors
+      debug:
+        msg: "{{ nginx_errors.stdout }}"

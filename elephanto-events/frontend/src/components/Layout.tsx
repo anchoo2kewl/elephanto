@@ -48,7 +48,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <div className="flex items-center space-x-2">
                   <span className="text-lg">🐘</span>
                   <h1 className="text-base font-bold text-gray-900 dark:text-white">
-                    ElephantTO
+                    ElephanTO
                   </h1>
                 </div>
                 
@@ -115,7 +115,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
                   </div>
                 </div>
                 <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ElephantTO Events
+                  ElephanTO Events
                 </h1>
                 <nav className="flex space-x-6">
                   {navItems.map(({ path, label, icon: Icon }) => (

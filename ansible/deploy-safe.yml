@@ -90,6 +90,14 @@
       become_user: ubuntu
       tags: app
 
+    - name: Pull latest changes
+      shell: |
+        cd {{ app_dir }}
+        git pull origin main
+      become: yes
+      become_user: ubuntu
+      tags: app
+
     - name: Set ownership of application files
       file:
         path: "{{ app_dir }}"
@@ -124,7 +132,13 @@
       become: yes
       tags: app
 
-    # AUTO_MIGRATE fix already applied
+    - name: Fix AUTO_MIGRATE in docker-compose.yml
+      replace:
+        path: "{{ app_dir }}/elephanto-events/docker-compose.yml"
+        regexp: 'AUTO_MIGRATE: true'
+        replace: 'AUTO_MIGRATE: "true"'
+      become: yes
+      tags: app
 
     - name: Reset SSH connection to pickup docker group membership
       meta: reset_connection
@@ -221,6 +235,13 @@
         path: /var/www/html
         state: directory
         mode: '0755'
+      become: yes
+      tags: nginx
+
+    - name: Remove default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
       become: yes
       tags: nginx
 
@@ -383,7 +404,7 @@
         msg: |
           🎯 ElephantTO Events Deployment Status:
           
-          🌐 Website: http://{{ domain }} ({{ 'HTTPS available' if certbot_result.rc == 0 else 'HTTP only - SSL setup needed' }})
+          🌐 Website: http://{{ domain }} (HTTP only - SSL setup needed)
           📧 Mailpit: http://{{ domain }}/mailpit/
           🔧 Application directory: {{ app_dir }}
           
@@ -393,5 +414,5 @@
           3. Check logs: docker-compose logs -f (in {{ app_dir }})
           4. Monitor: systemctl status elephanto-events
           
-          🔐 SSL: {{ 'SUCCESS' if certbot_result.rc == 0 else 'MANUAL SETUP REQUIRED' }}
+          🔐 SSL: MANUAL SETUP REQUIRED (run nginx and ssl tags)
       tags: always

@@ -1,0 +1,39 @@
+---
+- name: Apply docker-compose fix
+  hosts: elephanto_servers
+  gather_facts: no
+  vars:
+    app_dir: /opt/elephanto-events
+  
+  tasks:
+    - name: Check current AUTO_MIGRATE line
+      shell: grep -n "AUTO_MIGRATE:" {{ app_dir }}/elephanto-events/docker-compose.yml
+      register: current_line
+      
+    - name: Show current line
+      debug:
+        msg: "{{ current_line.stdout }}"
+        
+    - name: Fix AUTO_MIGRATE boolean to string
+      replace:
+        path: "{{ app_dir }}/elephanto-events/docker-compose.yml"
+        regexp: 'AUTO_MIGRATE: true'
+        replace: 'AUTO_MIGRATE: "true"'
+      become: yes
+      
+    - name: Verify the fix
+      shell: grep -n "AUTO_MIGRATE:" {{ app_dir }}/elephanto-events/docker-compose.yml
+      register: fixed_line
+      
+    - name: Show fixed line  
+      debug:
+        msg: "{{ fixed_line.stdout }}"
+        
+    - name: Test docker-compose config
+      shell: cd {{ app_dir }}/elephanto-events && docker-compose config
+      register: config_test
+      
+    - name: Show config test result
+      debug:
+        msg: "Config is valid!" 
+      when: config_test.rc == 0

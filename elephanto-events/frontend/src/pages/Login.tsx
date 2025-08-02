@@ -39,7 +39,7 @@ export const Login: React.FC = () => {
               <TorontoSkylineSVG />
             </div>
             <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg" style={{color: '#ffffff', textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
-              ElephantTO Events
+              ElephanTO Events
             </h1>
           </div>
           
@@ -82,7 +82,7 @@ export const Login: React.FC = () => {
             <TorontoSkylineSVG />
           </div>
           <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg" style={{color: '#ffffff', textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
-            ElephantTO Events
+            ElephanTO Events
           </h1>
           <p className="text-white font-medium" style={{color: '#ffffff', textShadow: '1px 1px 2px rgba(0,0,0,0.8)'}}>
             Making memories, one event at a time in Toronto
