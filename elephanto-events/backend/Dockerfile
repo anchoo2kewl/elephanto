@@ -3,13 +3,18 @@ FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Add multiple repository mirrors for better connectivity
-RUN echo "https://mirror.leaseweb.com/alpine/v3.20/main" > /etc/apk/repositories && \
+# Add multiple repository mirrors with retry logic
+RUN echo "https://mirror.aarnet.edu.au/alpine/v3.20/main" > /etc/apk/repositories && \
+    echo "https://mirror.aarnet.edu.au/alpine/v3.20/community" >> /etc/apk/repositories && \
+    echo "https://mirror.leaseweb.com/alpine/v3.20/main" >> /etc/apk/repositories && \
     echo "https://mirror.leaseweb.com/alpine/v3.20/community" >> /etc/apk/repositories && \
     echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/main" >> /etc/apk/repositories && \
     echo "https://dl-cdn.alpinelinux.org/alpine/v3.20/community" >> /etc/apk/repositories
 
-RUN apk update && apk add --no-cache git ca-certificates
+# Retry apk operations with different strategies
+RUN (apk update && apk add --no-cache git ca-certificates) || \
+    (sleep 5 && apk update --force-refresh && apk add --no-cache git ca-certificates) || \
+    (apk add --no-cache --repository=https://mirror.aarnet.edu.au/alpine/v3.20/main --repository=https://mirror.aarnet.edu.au/alpine/v3.20/community git ca-certificates)
 
 COPY backend/go.mod backend/go.sum ./
 RUN go mod download
