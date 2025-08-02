@@ -39,49 +39,20 @@
 
     - name: Install Docker
       block:
-        - name: Remove old Docker packages
+        - name: Clean up any conflicting Docker repositories
+          shell: |
+            rm -f /etc/apt/sources.list.d/docker.list
+            rm -f /etc/apt/keyrings/docker.gpg
+          become: yes
+          failed_when: false
+
+        - name: Install Docker from Ubuntu repos
           apt:
             name:
-              - docker
-              - docker-engine
               - docker.io
-              - containerd
-              - runc
-            state: absent
-
-        - name: Create keyrings directory
-          file:
-            path: /etc/apt/keyrings
-            state: directory
-            mode: '0755'
-
-        - name: Add Docker GPG key
-          shell: |
-            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-            chmod a+r /etc/apt/keyrings/docker.gpg
-
-        - name: Remove existing Docker sources
-          file:
-            path: /etc/apt/sources.list.d/docker.list
-            state: absent
-
-        - name: Add Docker repository
-          shell: |
-            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-        - name: Update apt cache
-          apt:
-            update_cache: yes
-
-        - name: Install Docker CE
-          apt:
-            name:
-              - docker-ce
-              - docker-ce-cli
-              - containerd.io
-              - docker-buildx-plugin
-              - docker-compose-plugin
+              - docker-compose
             state: present
+            update_cache: yes
 
         - name: Start and enable Docker
           systemd:
@@ -97,13 +68,7 @@
       become: yes
       tags: docker
 
-    - name: Install Docker Compose (standalone)
-      get_url:
-        url: "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-aarch64"
-        dest: /usr/local/bin/docker-compose
-        mode: '0755'
-      become: yes
-      tags: docker
+    # Docker Compose already installed from Ubuntu repos
 
     - name: Create application directory
       file:
@@ -115,18 +80,14 @@
       become: yes
       tags: app
 
-    - name: Copy application files
-      synchronize:
-        src: "../"
-        dest: "{{ app_dir }}/"
-        delete: yes
-        rsync_opts:
-          - "--exclude=ansible"
-          - "--exclude=node_modules"
-          - "--exclude=.git"
-          - "--exclude=.env"
-          - "--exclude=.DS_Store"
-      delegate_to: localhost
+    - name: Clone application repository (HTTPS)
+      git:
+        repo: https://github.com/anchoo2kewl/elephanto.git
+        dest: "{{ app_dir }}"
+        force: yes
+        version: main
+      become: yes
+      become_user: ubuntu
       tags: app
 
     - name: Set ownership of application files
@@ -152,16 +113,18 @@
           # Application Configuration
           FRONTEND_URL=https://{{ domain }}
           JWT_SECRET={{ ansible_date_time.epoch }}{{ ansible_hostname }}secret
-          AUTO_MIGRATE=true
+          AUTO_MIGRATE="true"
           
           # Server Configuration
           PORT=8080
-        dest: "{{ app_dir }}/.env"
+        dest: "{{ app_dir }}/elephanto-events/.env"
         owner: ubuntu
         group: ubuntu
         mode: '0600'
       become: yes
       tags: app
+
+    # AUTO_MIGRATE fix already applied
 
     - name: Reset SSH connection to pickup docker group membership
       meta: reset_connection
@@ -169,10 +132,10 @@
 
     - name: Build and start Docker containers
       shell: |
-        cd {{ app_dir }}
-        /usr/local/bin/docker-compose down || true
-        /usr/local/bin/docker-compose build --no-cache
-        /usr/local/bin/docker-compose up -d
+        cd {{ app_dir }}/elephanto-events
+        docker-compose down || true
+        docker-compose build --no-cache
+        docker-compose up -d
       tags: app
 
     - name: Wait for application to be ready
@@ -394,9 +357,9 @@
           [Service]
           Type=oneshot
           RemainAfterExit=yes
-          WorkingDirectory={{ app_dir }}
-          ExecStart=/usr/local/bin/docker-compose up -d
-          ExecStop=/usr/local/bin/docker-compose down
+          WorkingDirectory={{ app_dir }}/elephanto-events
+          ExecStart=/usr/bin/docker-compose up -d
+          ExecStop=/usr/bin/docker-compose down
           TimeoutStartSec=0
           User=ubuntu
           Group=ubuntu
