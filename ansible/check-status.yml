@@ -1,0 +1,30 @@
+---
+- name: Check ElephantTO Events deployment status
+  hosts: elephanto_servers
+  gather_facts: no
+  
+  tasks:
+    - name: Check if server is responsive
+      ping:
+      
+    - name: Check running processes
+      shell: |
+        echo "=== Docker Status ==="
+        systemctl is-active docker || echo "Docker not running"
+        echo ""
+        echo "=== Nginx Status ==="
+        systemctl is-active nginx || echo "Nginx not running"
+        echo ""
+        echo "=== Application Status ==="
+        systemctl is-active elephanto-events || echo "App service not running"
+        echo ""
+        echo "=== Port Status ==="
+        ss -tulpn | grep -E ':80|:443|:8080|:3000|:8025' || echo "No application ports open"
+        echo ""
+        echo "=== Disk Space ==="
+        df -h /
+      register: status_output
+      
+    - name: Display status
+      debug:
+        msg: "{{ status_output.stdout }}"

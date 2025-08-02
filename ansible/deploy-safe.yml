@@ -1,0 +1,434 @@
+---
+- name: Deploy ElephantTO Events to Oracle Linux 9 ARM (Safe Mode)
+  hosts: elephanto_servers
+  gather_facts: yes
+  vars:
+    app_name: elephanto-events
+    app_dir: /opt/{{ app_name }}
+    nginx_conf_dir: /etc/nginx/conf.d
+    domain: "{{ domain_name }}"
+    admin_email: "{{ email }}"
+
+  tasks:
+    # SSH safety check skipped - using Oracle Cloud firewall
+
+    - name: Update system packages
+      apt:
+        update_cache: yes
+        upgrade: yes
+      become: yes
+      tags: packages
+
+    - name: Install required packages
+      apt:
+        name:
+          - git
+          - nginx
+          - python3-pip
+          - curl
+          - wget
+          - unzip
+          - rsync
+          - apt-transport-https
+          - ca-certificates
+          - gnupg
+          - lsb-release
+        state: present
+      become: yes
+      tags: packages
+
+    - name: Install Docker
+      block:
+        - name: Remove old Docker packages
+          apt:
+            name:
+              - docker
+              - docker-engine
+              - docker.io
+              - containerd
+              - runc
+            state: absent
+
+        - name: Create keyrings directory
+          file:
+            path: /etc/apt/keyrings
+            state: directory
+            mode: '0755'
+
+        - name: Add Docker GPG key
+          shell: |
+            curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+            chmod a+r /etc/apt/keyrings/docker.gpg
+
+        - name: Remove existing Docker sources
+          file:
+            path: /etc/apt/sources.list.d/docker.list
+            state: absent
+
+        - name: Add Docker repository
+          shell: |
+            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+        - name: Update apt cache
+          apt:
+            update_cache: yes
+
+        - name: Install Docker CE
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-buildx-plugin
+              - docker-compose-plugin
+            state: present
+
+        - name: Start and enable Docker
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+
+        - name: Add ubuntu user to docker group
+          user:
+            name: ubuntu
+            groups: docker
+            append: yes
+      become: yes
+      tags: docker
+
+    - name: Install Docker Compose (standalone)
+      get_url:
+        url: "https://github.com/docker/compose/releases/download/v2.24.0/docker-compose-linux-aarch64"
+        dest: /usr/local/bin/docker-compose
+        mode: '0755'
+      become: yes
+      tags: docker
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+      become: yes
+      tags: app
+
+    - name: Copy application files
+      synchronize:
+        src: "../"
+        dest: "{{ app_dir }}/"
+        delete: yes
+        rsync_opts:
+          - "--exclude=ansible"
+          - "--exclude=node_modules"
+          - "--exclude=.git"
+          - "--exclude=.env"
+          - "--exclude=.DS_Store"
+      delegate_to: localhost
+      tags: app
+
+    - name: Set ownership of application files
+      file:
+        path: "{{ app_dir }}"
+        owner: ubuntu
+        group: ubuntu
+        recurse: yes
+      become: yes
+      tags: app
+
+    - name: Create environment file
+      copy:
+        content: |
+          # Database Configuration
+          DATABASE_URL=postgres://elephanto:elephanto_password@postgres:5432/elephanto_events
+          
+          # Email Configuration
+          EMAIL_SERVICE=smtp
+          SMTP_HOST=mailpit
+          SMTP_PORT=1025
+          
+          # Application Configuration
+          FRONTEND_URL=https://{{ domain }}
+          JWT_SECRET={{ ansible_date_time.epoch }}{{ ansible_hostname }}secret
+          AUTO_MIGRATE=true
+          
+          # Server Configuration
+          PORT=8080
+        dest: "{{ app_dir }}/.env"
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+      become: yes
+      tags: app
+
+    - name: Reset SSH connection to pickup docker group membership
+      meta: reset_connection
+      tags: app
+
+    - name: Build and start Docker containers
+      shell: |
+        cd {{ app_dir }}
+        /usr/local/bin/docker-compose down || true
+        /usr/local/bin/docker-compose build --no-cache
+        /usr/local/bin/docker-compose up -d
+      tags: app
+
+    - name: Wait for application to be ready
+      wait_for:
+        port: 8080
+        host: localhost
+        delay: 20
+        timeout: 300
+      tags: app
+
+    # Firewall skipped - using Oracle Cloud firewall
+
+    - name: Install Certbot
+      apt:
+        name:
+          - certbot
+          - python3-certbot-nginx
+        state: present
+      become: yes
+      tags: ssl
+
+    - name: Create basic nginx configuration (HTTP only first)
+      copy:
+        content: |
+          upstream backend {
+              server localhost:8080;
+          }
+
+          upstream frontend {
+              server localhost:3000;
+          }
+
+          server {
+              listen 80;
+              server_name {{ domain }};
+              
+              # API routes to backend
+              location /api/ {
+                  proxy_pass http://backend;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_connect_timeout 60s;
+                  proxy_send_timeout 60s;
+                  proxy_read_timeout 60s;
+              }
+
+              # Frontend routes
+              location / {
+                  proxy_pass http://frontend;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              # Mailpit access
+              location /mailpit/ {
+                  proxy_pass http://localhost:8025/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              # Let's Encrypt verification
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
+                  allow all;
+              }
+          }
+        dest: "{{ nginx_conf_dir }}/{{ app_name }}.conf"
+        backup: yes
+      become: yes
+      tags: nginx
+
+    - name: Create web root directory
+      file:
+        path: /var/www/html
+        state: directory
+        mode: '0755'
+      become: yes
+      tags: nginx
+
+    - name: Start and enable nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+      become: yes
+      tags: nginx
+
+    - name: Test nginx configuration
+      shell: nginx -t
+      become: yes
+      tags: nginx
+
+    - name: Generate SSL certificate with Certbot
+      shell: |
+        certbot certonly --webroot \
+          --webroot-path=/var/www/html \
+          --non-interactive \
+          --agree-tos \
+          --email {{ admin_email }} \
+          -d {{ domain }}
+      register: certbot_result
+      failed_when: false
+      become: yes
+      tags: ssl
+
+    - name: Update nginx configuration with SSL (if certificate was generated)
+      copy:
+        content: |
+          upstream backend {
+              server localhost:8080;
+          }
+
+          upstream frontend {
+              server localhost:3000;
+          }
+
+          server {
+              listen 80;
+              server_name {{ domain }};
+              
+              # Let's Encrypt verification
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
+                  allow all;
+              }
+              
+              # Redirect to HTTPS
+              location / {
+                  return 301 https://$server_name$request_uri;
+              }
+          }
+
+          server {
+              listen 443 ssl http2;
+              server_name {{ domain }};
+
+              # SSL Configuration
+              ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;
+
+              # Security headers
+              add_header X-Frame-Options DENY;
+              add_header X-Content-Type-Options nosniff;
+              add_header X-XSS-Protection "1; mode=block";
+
+              # API routes to backend
+              location /api/ {
+                  proxy_pass http://backend;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_connect_timeout 60s;
+                  proxy_send_timeout 60s;
+                  proxy_read_timeout 60s;
+              }
+
+              # Frontend routes
+              location / {
+                  proxy_pass http://frontend;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              # Mailpit access
+              location /mailpit/ {
+                  proxy_pass http://localhost:8025/;
+                  proxy_http_version 1.1;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+        dest: "{{ nginx_conf_dir }}/{{ app_name }}.conf"
+        backup: yes
+      become: yes
+      when: certbot_result.rc == 0
+      tags: ssl
+
+    - name: Reload nginx with new configuration
+      systemd:
+        name: nginx
+        state: reloaded
+      become: yes
+      tags: nginx
+
+    - name: Set up SSL certificate auto-renewal
+      cron:
+        name: "renew letsencrypt certificates"
+        minute: "0"
+        hour: "2"
+        job: "certbot renew --quiet && systemctl reload nginx"
+      become: yes
+      when: certbot_result.rc == 0
+      tags: ssl
+
+    - name: Create systemd service for docker-compose
+      copy:
+        content: |
+          [Unit]
+          Description=ElephantTO Events Docker Compose
+          Requires=docker.service
+          After=docker.service
+
+          [Service]
+          Type=oneshot
+          RemainAfterExit=yes
+          WorkingDirectory={{ app_dir }}
+          ExecStart=/usr/local/bin/docker-compose up -d
+          ExecStop=/usr/local/bin/docker-compose down
+          TimeoutStartSec=0
+          User=ubuntu
+          Group=ubuntu
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/elephanto-events.service
+      become: yes
+      tags: service
+
+    - name: Enable elephanto-events service
+      systemd:
+        name: elephanto-events
+        enabled: yes
+        daemon_reload: yes
+      become: yes
+      tags: service
+
+    - name: Display current status
+      debug:
+        msg: |
+          🎯 ElephantTO Events Deployment Status:
+          
+          🌐 Website: http://{{ domain }} ({{ 'HTTPS available' if certbot_result.rc == 0 else 'HTTP only - SSL setup needed' }})
+          📧 Mailpit: http://{{ domain }}/mailpit/
+          🔧 Application directory: {{ app_dir }}
+          
+          📋 Next steps:
+          1. Test HTTP site: http://{{ domain }}
+          2. If SSL worked: https://{{ domain }}
+          3. Check logs: docker-compose logs -f (in {{ app_dir }})
+          4. Monitor: systemctl status elephanto-events
+          
+          🔐 SSL: {{ 'SUCCESS' if certbot_result.rc == 0 else 'MANUAL SETUP REQUIRED' }}
+      tags: always
