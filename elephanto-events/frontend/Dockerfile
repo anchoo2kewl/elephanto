@@ -34,22 +34,30 @@ FROM nginx:alpine
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Create startup script that shows what we're serving
-ARG VITE_API_URL=http://localhost:8080
-RUN echo '#!/bin/sh' > /docker-entrypoint-log.sh && \
-    echo 'echo "=========================================="' >> /docker-entrypoint-log.sh && \
-    echo 'echo "FRONTEND CONTAINER STARTING"' >> /docker-entrypoint-log.sh && \
-    echo "echo '🔧 Built with VITE_API_URL = $VITE_API_URL'" >> /docker-entrypoint-log.sh && \
-    echo 'echo "Serving from: /usr/share/nginx/html"' >> /docker-entrypoint-log.sh && \
-    echo 'echo "API URLs in served files:"' >> /docker-entrypoint-log.sh && \
-    echo 'find /usr/share/nginx/html -name "*.js" -exec grep -Ho "localhost:8080\|elephantoevents.ca" {} \; | head -5 || echo "   No API URLs found"' >> /docker-entrypoint-log.sh && \
-    echo 'echo "Frontend ready on port 3000"' >> /docker-entrypoint-log.sh && \
-    echo 'echo "=========================================="' >> /docker-entrypoint-log.sh && \
-    echo 'exec "$@"' >> /docker-entrypoint-log.sh
+# Create runtime startup script
+RUN echo '#!/bin/sh' > /docker-entrypoint-runtime.sh && \
+    echo 'echo "=========================================="' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "FRONTEND CONTAINER STARTING"' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "🔧 Runtime API_URL: ${API_URL:-/api}"' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "Generating runtime configuration..."' >> /docker-entrypoint-runtime.sh && \
+    echo '' >> /docker-entrypoint-runtime.sh && \
+    echo '# Generate runtime config.js with current environment' >> /docker-entrypoint-runtime.sh && \
+    echo 'cat > /usr/share/nginx/html/config.js << EOF' >> /docker-entrypoint-runtime.sh && \
+    echo 'window.__APP_CONFIG__ = {' >> /docker-entrypoint-runtime.sh && \
+    echo '  API_URL: "${API_URL:-}"' >> /docker-entrypoint-runtime.sh && \
+    echo '};' >> /docker-entrypoint-runtime.sh && \
+    echo 'EOF' >> /docker-entrypoint-runtime.sh && \
+    echo '' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "Runtime config generated:"' >> /docker-entrypoint-runtime.sh && \
+    echo 'cat /usr/share/nginx/html/config.js' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "Serving from: /usr/share/nginx/html"' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "Frontend ready on port 3000"' >> /docker-entrypoint-runtime.sh && \
+    echo 'echo "=========================================="' >> /docker-entrypoint-runtime.sh && \
+    echo 'exec "$@"' >> /docker-entrypoint-runtime.sh
 
-RUN chmod +x /docker-entrypoint-log.sh
+RUN chmod +x /docker-entrypoint-runtime.sh
 
 EXPOSE 3000
 
-ENTRYPOINT ["/docker-entrypoint-log.sh"]
+ENTRYPOINT ["/docker-entrypoint-runtime.sh"]
 CMD ["nginx", "-g", "daemon off;"]
