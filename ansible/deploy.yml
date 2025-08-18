@@ -115,6 +115,9 @@
           
           # Server Configuration
           PORT=8080
+          
+          # Frontend Configuration - CRITICAL FOR PRODUCTION
+          VITE_API_URL=https://{{ domain }}
         dest: "{{ app_dir }}/.env"
         owner: opc
         group: opc

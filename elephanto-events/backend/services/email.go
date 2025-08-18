@@ -42,8 +42,24 @@ func NewEmailService(service, brevoKey, smtpHost string, smtpPort int, frontendU
 	}
 }
 
-func (e *EmailService) SendMagicLink(email, token string) error {
-	magicLink := fmt.Sprintf("%s/verify?token=%s", e.frontendURL, token)
+func (e *EmailService) SendMagicLink(email, token, origin string) error {
+	// Use the request origin if provided, otherwise fallback to configured frontend URL
+	baseURL := e.frontendURL
+	if origin != "" {
+		baseURL = origin
+	} else {
+		// If no origin provided, use the first domain from the configured frontend URL
+		if len(e.frontendURL) > 0 && e.frontendURL[0:4] == "http" {
+			for i := 0; i < len(e.frontendURL); i++ {
+				if e.frontendURL[i] == ',' {
+					baseURL = e.frontendURL[:i]
+					break
+				}
+			}
+		}
+	}
+	
+	magicLink := fmt.Sprintf("%s/verify?token=%s", baseURL, token)
 	
 	subject := "Welcome to ElephantTO Events - Your Secure Login Link"
 	htmlContent := fmt.Sprintf(`

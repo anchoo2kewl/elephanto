@@ -29,8 +29,29 @@ func (h *AuthHandler) RequestLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("AUTH HANDLER: Processing login request for email: %s\n", req.Email)
-	if err := h.authService.RequestLogin(req.Email); err != nil {
+	// Extract origin from request for domain-specific magic links
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		// Fallback to Referer header if Origin is not present
+		referer := r.Header.Get("Referer")
+		if referer != "" {
+			// Extract domain from referer URL
+			if len(referer) > 8 && referer[:8] == "https://" {
+				if endPos := len(referer); endPos > 8 {
+					for i := 8; i < len(referer); i++ {
+						if referer[i] == '/' || referer[i] == '?' || referer[i] == '#' {
+							endPos = i
+							break
+						}
+					}
+					origin = referer[:endPos]
+				}
+			}
+		}
+	}
+
+	fmt.Printf("AUTH HANDLER: Processing login request for email: %s from origin: %s\n", req.Email, origin)
+	if err := h.authService.RequestLogin(req.Email, origin); err != nil {
 		fmt.Printf("AUTH HANDLER: Error from auth service: %v\n", err)
 		http.Error(w, "Failed to send login link", http.StatusInternalServerError)
 		return

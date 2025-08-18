@@ -21,9 +21,9 @@ Complete migration of Elephanto Events application from localhost/development do
 - **CNAME Record**: `www.velvethour.ca` → `velvethour.ca`
 
 #### API Details:
-- **Zone ID**: `ff1671a76dac33855cf9c6509c05799c`
-- **Email**: chaiiandchance@gmail.com
-- **API Key**: Global API Key (configured)
+- **Zone ID**: `[REDACTED]`
+- **Email**: `[REDACTED]`
+- **API Key**: Global API Key (configured securely)
 
 #### Verification:
 ```bash
@@ -104,7 +104,7 @@ nginx:
 
 #### Let's Encrypt Setup:
 - **Certificate Domain**: velvethour.ca, www.velvethour.ca
-- **Email**: chaiiandchance@gmail.com
+- **Email**: `[REDACTED]`
 - **Auto-renewal**: Configured via cron and systemd timer
 
 #### Setup Script: `setup-ssl.sh`
@@ -263,9 +263,9 @@ docker-compose -f docker-compose.prod.yml logs -f nginx
 2. **Revert DNS**:
    ```bash
    # Use Cloudflare API to update A record back to previous IP
-   curl -X PUT "https://api.cloudflare.com/client/v4/zones/ff1671a76dac33855cf9c6509c05799c/dns_records/RECORD_ID" \
-     -H "X-Auth-Email: chaiiandchance@gmail.com" \
-     -H "X-Auth-Key: 1424814b9ee4603597bc84613842e782692e4" \
+   curl -X PUT "https://api.cloudflare.com/client/v4/zones/ZONE_ID/dns_records/RECORD_ID" \
+     -H "X-Auth-Email: YOUR_EMAIL" \
+     -H "X-Auth-Key: YOUR_API_KEY" \
      -H "Content-Type: application/json" \
      --data '{"type":"A","name":"velvethour.ca","content":"OLD_IP"}'
    ```
@@ -295,4 +295,4 @@ docker-compose -f docker-compose.prod.yml logs -f nginx
 **Document Version**: 1.0  
 **Last Updated**: August 18, 2025  
 **Status**: Production Ready  
-**Contact**: chaiiandchance@gmail.com
+**Contact**: `[REDACTED]`

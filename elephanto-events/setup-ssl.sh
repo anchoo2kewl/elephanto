@@ -28,7 +28,7 @@ sudo systemctl stop nginx 2>/dev/null || sudo docker stop elephanto_nginx 2>/dev
 echo "🔒 Generating SSL certificate..."
 sudo certbot certonly \
     --standalone \
-    --email chaiiandchance@gmail.com \
+    --email YOUR_EMAIL_HERE \
     --agree-tos \
     --no-eff-email \
     -d velvethour.ca \

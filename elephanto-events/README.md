@@ -88,33 +88,50 @@ The application will be available at:
 
 ## 🔧 Development
 
-### Environment Variables
+### 🎛️ Development Script (Recommended)
 
-Copy `.env.example` to `.env` and modify as needed:
+Use the `./dev.sh` script for easy local development:
 
 ```bash
-# Backend
-DATABASE_URL=postgres://elephanto:elephanto123@postgres:5432/elephanto_events?sslmode=disable
-JWT_SECRET=your-super-secret-jwt-key-change-in-production
-EMAIL_SERVICE=mailpit  # or brevo
-BREVO_API_KEY=your-brevo-api-key-here
-SMTP_HOST=mailpit
-SMTP_PORT=1025
-FRONTEND_URL=http://localhost:3000
-PORT=8080
-AUTO_MIGRATE=true
+# Start services individually or all at once
+./dev.sh start infrastructure    # Only postgres + mailpit (Docker)
+./dev.sh start backend          # Only Go backend (native)
+./dev.sh start frontend         # Only React frontend (native)  
+./dev.sh start all             # Everything
 
-# Frontend
-VITE_API_URL=http://localhost:8080
+# Control services
+./dev.sh stop backend          # Stop individual services
+./dev.sh restart all           # Restart everything
+./dev.sh status               # Show status + URLs + PIDs
+
+# Monitor and debug
+./dev.sh logs backend 50       # Show last 50 log lines
+./dev.sh follow frontend       # Follow logs in real-time
+./dev.sh test                 # Test all endpoints
+./dev.sh cleanup              # Clean up PID/log files
+
+# Docker Compose control
+./dev.sh dc start             # Full Docker Compose
+./dev.sh dc logs backend      # Docker Compose logs
+./dev.sh dc stop              # Stop Docker Compose
 ```
 
-### Running Services Individually
+### Environment Variables
+
+Environment files are automatically managed by the dev script:
+- `.env` - Docker Compose configuration
+- `.env.local` - Native development (auto-created)
+- `backend/.env` - Backend local config (auto-created)
+
+### Manual Setup (Alternative)
+
+If you prefer manual control:
 
 #### Backend (Go)
 ```bash
 cd backend
 go mod download
-go run main.go
+go run main.go  # Requires postgres + mailpit running
 ```
 
 #### Frontend (React)
@@ -122,11 +139,6 @@ go run main.go
 cd frontend
 npm install
 npm run dev
-```
-
-#### Database
-```bash
-docker run -p 5432:5432 -e POSTGRES_USER=elephanto -e POSTGRES_PASSWORD=elephanto123 -e POSTGRES_DB=elephanto_events postgres:15-alpine
 ```
 
 ### Database Migrations

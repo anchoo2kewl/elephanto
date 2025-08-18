@@ -24,7 +24,7 @@ func NewAuthService(db *sql.DB, emailService *EmailService, jwtSecret string) *A
 	}
 }
 
-func (a *AuthService) RequestLogin(email string) error {
+func (a *AuthService) RequestLogin(email, origin string) error {
 	user, err := a.getOrCreateUser(email)
 	if err != nil {
 		return fmt.Errorf("failed to get or create user: %w", err)
@@ -45,8 +45,8 @@ func (a *AuthService) RequestLogin(email string) error {
 		return fmt.Errorf("failed to store auth token: %w", err)
 	}
 
-	fmt.Printf("Calling email service to send magic link to %s with token %s\n", email, token)
-	if err := a.emailService.SendMagicLink(email, token); err != nil {
+	fmt.Printf("Calling email service to send magic link to %s with token %s using origin %s\n", email, token, origin)
+	if err := a.emailService.SendMagicLink(email, token, origin); err != nil {
 		fmt.Printf("Email service returned error: %v\n", err)
 		return fmt.Errorf("failed to send magic link: %w", err)
 	}
