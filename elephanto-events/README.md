@@ -1,14 +1,19 @@
-# 🐘🗼 ElephantTO Events
+# ✨ Velvet Hour Events
 
-**Making memories, one event at a time in Toronto**
+**Where Connection Meets Intention**
 
-ElephantTO Events is a modern full-stack web application for discovering and managing events in Toronto. Built with Go backend, React frontend, and featuring a beautiful glassmorphism design with email-based authentication.
+Velvet Hour Events is a modern full-stack web application for exclusive South Asian networking events in Toronto. Built with Go backend, React frontend, and featuring a sophisticated dark theme with gold accents, plus comprehensive attendee management features.
 
 ## ✨ Features
 
 - 🔐 **Magic Link Authentication** - Passwordless login via email
-- 🎨 **Glassmorphism UI** - Beautiful modern design with dark/light mode
-- 👥 **User Management** - Complete profile system with onboarding
+- 🎨 **Modern UI** - Sophisticated dark theme with gold accents and glassmorphism effects
+- 👥 **User Management** - Complete profile system with streamlined onboarding
+- 🍸 **Cocktail Preferences** - Attendee drink selection with database persistence
+- 📋 **Comprehensive Surveys** - Detailed attendee information collection
+- 🗺️ **Google Maps Integration** - Venue location with embedded maps
+- 🔔 **Toast Notifications** - Modern notification system replacing browser alerts
+- ⏰ **Event Countdown** - Real-time countdown to event date
 - 👑 **Admin Panel** - User role management and system monitoring
 - 📧 **Email Service** - Mailpit for development, Brevo for production
 - 🐳 **Docker Ready** - Complete containerization with Docker Compose
@@ -31,25 +36,45 @@ elephanto-events/
 ├── docker-compose.yml          # Container orchestration
 ├── .env.example               # Environment template
 ├── README.md                  # This file
+├── docs/                      # 📚 Documentation (ALL PRDs go here)
+│   ├── VELVET_HOUR_REDESIGN_PRD.md  # Complete redesign documentation
+│   ├── DEPLOYMENT_GUIDE.md          # Production deployment guide
+│   ├── SECURITY_ALERT.md            # Security best practices
+│   └── domain-migration-prd.md      # Domain migration documentation
 ├── backend/                   # Go backend
 │   ├── Dockerfile
 │   ├── main.go               # Application entry point
 │   ├── config/               # Configuration management
 │   ├── db/                   # Database and migrations
 │   ├── handlers/             # HTTP request handlers
+│   │   ├── cocktail_preference.go   # Cocktail selection API
+│   │   └── survey_response.go       # Survey management API
 │   ├── middleware/           # Authentication & CORS
 │   ├── models/               # Data models
+│   │   ├── cocktail_preference.go   # Cocktail preference model
+│   │   └── survey_response.go       # Survey response model
 │   ├── services/             # Business logic
+│   │   ├── cocktail_preference.go   # Cocktail business logic
+│   │   └── survey_response.go       # Survey business logic
 │   └── utils/                # Utilities (JWT, crypto)
 ├── frontend/                 # React frontend
 │   ├── Dockerfile
 │   ├── src/
 │   │   ├── components/       # Reusable components
+│   │   │   ├── CocktailDialog.tsx   # Drink selection modal
+│   │   │   ├── SurveyDialog.tsx     # Attendee survey form
+│   │   │   ├── Toast.tsx            # Notification system
+│   │   │   ├── CountdownTimer.tsx   # Event countdown
+│   │   │   ├── GoogleMap.tsx        # Venue maps
+│   │   │   └── VelvetHourLogo.tsx   # Brand logo component
 │   │   ├── pages/           # Route components
 │   │   ├── contexts/        # React contexts
 │   │   ├── services/        # API client
+│   │   │   ├── cocktailApi.ts       # Cocktail API client
+│   │   │   └── surveyApi.ts         # Survey API client
 │   │   └── types/           # TypeScript types
 │   └── public/
+│       └── images/          # Logo assets
 └── postgres/                 # Database initialization
     └── init.sql
 ```
@@ -166,6 +191,12 @@ go run main.go
 
 ### User Management
 - `PUT /api/users/profile` - Update profile (protected)
+
+### Event Features (Protected)
+- `GET /api/cocktail-preference` - Get user's cocktail preference
+- `POST /api/cocktail-preference` - Save/update cocktail preference
+- `GET /api/survey-response` - Get user's survey response
+- `POST /api/survey-response` - Submit survey response (one-time only)
 
 ### Admin (Admin Only)
 - `GET /api/admin/users` - List all users
@@ -302,13 +333,38 @@ docker-compose logs backend
 docker-compose logs frontend
 ```
 
+## 📚 Documentation Guidelines
+
+### Product Requirements Documents (PRDs)
+**⚠️ IMPORTANT**: All Product Requirements Documents (PRDs) must be created in the `/docs` directory.
+
+When creating documentation:
+- **PRDs**: Always save to `docs/[FEATURE_NAME]_PRD.md`
+- **Technical Specs**: Save to `docs/[COMPONENT_NAME]_SPEC.md` 
+- **Deployment Guides**: Save to `docs/[ENVIRONMENT]_DEPLOYMENT_GUIDE.md`
+- **Security Docs**: Save to `docs/SECURITY_[TOPIC].md`
+
+### Existing Documentation
+- `docs/VELVET_HOUR_REDESIGN_PRD.md` - Complete application redesign documentation
+- `docs/DEPLOYMENT_GUIDE.md` - Production deployment instructions  
+- `docs/SECURITY_ALERT.md` - Security best practices and guidelines
+- `docs/domain-migration-prd.md` - Domain migration documentation
+
+### Documentation Standards
+- Use clear, descriptive filenames in UPPER_CASE
+- Include comprehensive technical details and implementation notes
+- Document all API endpoints, database schema changes, and UI components
+- Include before/after comparisons for redesigns and migrations
+- Add troubleshooting sections for deployment guides
+
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+4. **Document changes** in appropriate files in `/docs` directory
+5. Test thoroughly
+6. Submit a pull request
 
 ## 📄 License
 
@@ -316,4 +372,4 @@ This project is licensed under the MIT License.
 
 ---
 
-Built with ❤️ by the Elephanto team. Making memories, one event at a time! 🐘✨
+Built with ❤️ for the South Asian community in Toronto. Where connection meets intention! ✨🥂
