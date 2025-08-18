@@ -21,7 +21,7 @@ func NewAdminHandler(db *sql.DB) *AdminHandler {
 
 func (h *AdminHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
-		SELECT id, email, name, dateOfBirth, currentCity, role, isOnboarded, createdAt, updatedAt
+		SELECT id, email, name, role, isOnboarded, createdAt, updatedAt
 		FROM users
 		ORDER BY createdAt DESC
 	`)
@@ -35,7 +35,7 @@ func (h *AdminHandler) GetUsers(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var user models.User
 		err := rows.Scan(
-			&user.ID, &user.Email, &user.Name, &user.DateOfBirth, &user.CurrentCity,
+			&user.ID, &user.Email, &user.Name,
 			&user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {

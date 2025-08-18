@@ -10,8 +10,6 @@ type User struct {
 	ID           uuid.UUID  `json:"id" db:"id"`
 	Email        string     `json:"email" db:"email"`
 	Name         *string    `json:"name" db:"name"`
-	DateOfBirth  *time.Time `json:"dateOfBirth" db:"dateOfBirth"`
-	CurrentCity  *string    `json:"currentCity" db:"currentCity"`
 	Role         string     `json:"role" db:"role"`
 	IsOnboarded  bool       `json:"isOnboarded" db:"isOnboarded"`
 	CreatedAt    time.Time  `json:"createdAt" db:"createdAt"`
@@ -58,8 +56,6 @@ type LoginRequest struct {
 
 type UpdateProfileRequest struct {
 	Name        *string    `json:"name"`
-	DateOfBirth *time.Time `json:"dateOfBirth"`
-	CurrentCity *string    `json:"currentCity"`
 }
 
 type UpdateRoleRequest struct {

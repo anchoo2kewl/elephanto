@@ -64,13 +64,13 @@ func (a *AuthService) VerifyToken(token, ipAddress, userAgent string) (*models.U
 
 	err := a.db.QueryRow(`
 		SELECT at.id, at.userId, at.token, at.expiresAt, at.used,
-		       u.id, u.email, u.name, u.dateOfBirth, u.currentCity, u.role, u.isOnboarded, u.createdAt, u.updatedAt
+		       u.id, u.email, u.name, u.role, u.isOnboarded, u.createdAt, u.updatedAt
 		FROM authTokens at
 		JOIN users u ON at.userId = u.id
 		WHERE at.token = $1 AND at.used = FALSE AND at.expiresAt > $2
 	`, token, time.Now()).Scan(
 		&authToken.ID, &authToken.UserID, &authToken.Token, &authToken.ExpiresAt, &authToken.Used,
-		&user.ID, &user.Email, &user.Name, &user.DateOfBirth, &user.CurrentCity, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.Name, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -127,12 +127,12 @@ func (a *AuthService) VerifyToken(token, ipAddress, userAgent string) (*models.U
 func (a *AuthService) ValidateSession(sessionToken string) (*models.User, error) {
 	var user models.User
 	err := a.db.QueryRow(`
-		SELECT u.id, u.email, u.name, u.dateOfBirth, u.currentCity, u.role, u.isOnboarded, u.createdAt, u.updatedAt
+		SELECT u.id, u.email, u.name, u.role, u.isOnboarded, u.createdAt, u.updatedAt
 		FROM sessions s
 		JOIN users u ON s.userId = u.id
 		WHERE s.token = $1 AND s.expiresAt > $2
 	`, sessionToken, time.Now()).Scan(
-		&user.ID, &user.Email, &user.Name, &user.DateOfBirth, &user.CurrentCity, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.Name, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -162,10 +162,10 @@ func (a *AuthService) Logout(sessionToken string) error {
 func (a *AuthService) GetUserByID(userID string) (*models.User, error) {
 	var user models.User
 	err := a.db.QueryRow(`
-		SELECT id, email, name, dateOfBirth, currentCity, role, isOnboarded, createdAt, updatedAt
+		SELECT id, email, name, role, isOnboarded, createdAt, updatedAt
 		FROM users WHERE id = $1
 	`, userID).Scan(
-		&user.ID, &user.Email, &user.Name, &user.DateOfBirth, &user.CurrentCity, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.Name, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -179,10 +179,10 @@ func (a *AuthService) GetUserByID(userID string) (*models.User, error) {
 func (a *AuthService) getOrCreateUser(email string) (*models.User, error) {
 	var user models.User
 	err := a.db.QueryRow(`
-		SELECT id, email, name, dateOfBirth, currentCity, role, isOnboarded, createdAt, updatedAt
+		SELECT id, email, name, role, isOnboarded, createdAt, updatedAt
 		FROM users WHERE email = $1
 	`, email).Scan(
-		&user.ID, &user.Email, &user.Name, &user.DateOfBirth, &user.CurrentCity, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
+		&user.ID, &user.Email, &user.Name, &user.Role, &user.IsOnboarded, &user.CreatedAt, &user.UpdatedAt,
 	)
 
 	if err == nil {

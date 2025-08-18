@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { ThemeToggle } from './ThemeToggle';
-import { TorontoSkylineSVG } from './TorontoSkylineSVG';
+import { VelvetHourLogo } from './VelvetHourLogo';
 import { LogOut, Settings, Shield, User, Menu, X } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { Link, useLocation } from 'react-router-dom';
@@ -32,12 +32,12 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: User },
-    { path: '/settings', label: 'Settings', icon: Settings },
+    { path: '/settings', label: 'My Profile', icon: Settings },
     ...(user.role === 'admin' ? [{ path: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-600 via-blue-600 to-purple-800 dark:from-gray-900 dark:via-purple-900 dark:to-gray-900 overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black dark:from-black dark:via-gray-900 dark:to-black overflow-x-hidden">
       {/* Header */}
       <header className="p-1 sm:p-4">
         <div className="max-w-6xl mx-auto">
@@ -46,9 +46,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="block sm:block md:hidden lg:hidden xl:hidden">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <span className="text-lg">🐘</span>
-                  <h1 className="text-base font-bold text-gray-900 dark:text-white">
-                    ElephanTO
+                  <VelvetHourLogo size="small" />
+                  <h1 className="text-base font-bold text-yellow-600 dark:text-yellow-400">
+                    Velvet Hour
                   </h1>
                 </div>
                 
@@ -108,14 +108,9 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             {/* Desktop Layout */}
             <div className="hidden md:flex lg:flex xl:flex items-center justify-between">
               <div className="flex items-center space-x-6">
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl leading-none">🐘</span>
-                  <div className="scale-50 -mt-3">
-                    <TorontoSkylineSVG />
-                  </div>
-                </div>
-                <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                  ElephanTO Events
+                <VelvetHourLogo size="medium" />
+                <h1 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
+                  Velvet Hour
                 </h1>
                 <nav className="flex space-x-6">
                   {navItems.map(({ path, label, icon: Icon }) => (

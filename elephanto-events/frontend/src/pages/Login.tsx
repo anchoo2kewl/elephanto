@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Mail, Send, CheckCircle } from 'lucide-react';
 import { GlassCard } from '@/components/GlassCard';
-import { TorontoSkylineSVG } from '@/components/TorontoSkylineSVG';
+import { VelvetHourLogo } from '@/components/VelvetHourLogo';
 import { authAPI } from '@/services/api';
 
 export const Login: React.FC = () => {
@@ -34,12 +34,11 @@ export const Login: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center p-4">
         <div className="w-full max-w-md animate-fade-in">
           <div className="text-center mb-8">
-            <div className="relative mb-6">
-              <div className="animate-float text-6xl mb-4">🐘</div>
-              <TorontoSkylineSVG />
+            <div className="relative mb-2 flex justify-center">
+              <VelvetHourLogo size="large" />
             </div>
-            <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg" style={{color: '#ffffff', textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
-              ElephanTO Events
+            <h1 className="text-4xl font-bold text-black mb-2 drop-shadow-lg" style={{color: '#000000', textShadow: '2px 2px 4px rgba(255,255,255,0.8)'}}>
+              Velvet Hour
             </h1>
           </div>
           
@@ -77,15 +76,14 @@ export const Login: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center p-4">
       <div className="w-full max-w-md animate-fade-in">
         <div className="text-center mb-8">
-          <div className="relative mb-6">
-            <div className="animate-float text-6xl mb-4">🐘</div>
-            <TorontoSkylineSVG />
+          <div className="relative mb-2 flex justify-center">
+            <VelvetHourLogo size="large" />
           </div>
-          <h1 className="text-4xl font-bold text-white mb-2 drop-shadow-lg" style={{color: '#ffffff', textShadow: '2px 2px 4px rgba(0,0,0,0.8)'}}>
-            ElephanTO Events
+          <h1 className="text-4xl font-bold text-black mb-2 drop-shadow-lg" style={{color: '#000000', textShadow: '2px 2px 4px rgba(255,255,255,0.8)'}}>
+            Velvet Hour
           </h1>
-          <p className="text-white font-medium" style={{color: '#ffffff', textShadow: '1px 1px 2px rgba(0,0,0,0.8)'}}>
-            Making memories, one event at a time in Toronto
+          <p className="text-black font-semibold text-lg" style={{color: '#000000', textShadow: '1px 1px 2px rgba(255,255,255,0.6)'}}>
+            An exclusive evening of networking and connection
           </p>
         </div>
 

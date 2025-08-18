@@ -4,12 +4,14 @@ interface GlassCardProps {
   children: React.ReactNode;
   className?: string;
   variant?: 'default' | 'elevated' | 'subtle';
+  onClick?: () => void;
 }
 
 export const GlassCard: React.FC<GlassCardProps> = ({ 
   children, 
   className = '', 
-  variant = 'default' 
+  variant = 'default',
+  onClick 
 }) => {
   const baseClasses = 'rounded-2xl border border-white/20 dark:border-white/10';
   
@@ -20,7 +22,10 @@ export const GlassCard: React.FC<GlassCardProps> = ({
   };
 
   return (
-    <div className={`${baseClasses} ${variantClasses[variant]} ${className}`}>
+    <div 
+      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
+      onClick={onClick}
+    >
       {children}
     </div>
   );

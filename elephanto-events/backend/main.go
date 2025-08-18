@@ -60,6 +60,8 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authService)
 	userHandler := handlers.NewUserHandler(database.DB)
 	adminHandler := handlers.NewAdminHandler(database.DB)
+	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
+	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -93,6 +95,10 @@ func main() {
 	protected.HandleFunc("/auth/me", authHandler.GetMe).Methods("GET")
 	protected.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
 	protected.HandleFunc("/users/profile", userHandler.UpdateProfile).Methods("PUT")
+	protected.HandleFunc("/cocktail-preference", cocktailHandler.GetPreference).Methods("GET")
+	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
+	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
+	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
 
 	admin := protected.PathPrefix("/admin").Subrouter()
 	admin.Use(middleware.AdminMiddleware)
@@ -180,6 +186,8 @@ func serve() {
 	authHandler := handlers.NewAuthHandler(authService)
 	userHandler := handlers.NewUserHandler(database.DB)
 	adminHandler := handlers.NewAdminHandler(database.DB)
+	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
+	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -213,6 +221,10 @@ func serve() {
 	protected.HandleFunc("/auth/me", authHandler.GetMe).Methods("GET")
 	protected.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
 	protected.HandleFunc("/users/profile", userHandler.UpdateProfile).Methods("PUT")
+	protected.HandleFunc("/cocktail-preference", cocktailHandler.GetPreference).Methods("GET")
+	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
+	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
+	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
 
 	admin := protected.PathPrefix("/admin").Subrouter()
 	admin.Use(middleware.AdminMiddleware)
