@@ -61,3 +61,25 @@ type UpdateProfileRequest struct {
 type UpdateRoleRequest struct {
 	Role string `json:"role"`
 }
+
+// UserWithDetails includes survey and cocktail data
+type UserWithDetails struct {
+	User             User                   `json:"user"`
+	SurveyResponse   *SurveyResponse        `json:"surveyResponse,omitempty"`
+	CocktailPref     *CocktailPreference    `json:"cocktailPreference,omitempty"`
+}
+
+// Admin user creation request
+type CreateUserRequest struct {
+	Email        string  `json:"email" validate:"required,email"`
+	Name         *string `json:"name"`
+	Role         *string `json:"role"` // defaults to "user"
+	IsOnboarded  *bool   `json:"isOnboarded"` // defaults to false
+}
+
+// Admin user update request (full profile)
+type UpdateUserFullRequest struct {
+	Name            *string `json:"name"`
+	Role            *string `json:"role"`
+	IsOnboarded     *bool   `json:"isOnboarded"`
+}

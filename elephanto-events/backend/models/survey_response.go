@@ -17,7 +17,9 @@ type SurveyResponse struct {
 	Personality      string    `json:"personality" db:"personality"`
 	ConnectionType   string    `json:"connectionType" db:"connectionType"`
 	InstagramHandle  *string   `json:"instagramHandle" db:"instagramHandle"`
-	HowHeardAboutUs  string    `json:"howHeardAboutUs" db:"howHeardAboutUs"`
-	CreatedAt        time.Time `json:"createdAt" db:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt" db:"updatedAt"`
+	HowHeardAboutUs  string     `json:"howHeardAboutUs" db:"howHeardAboutUs"`
+	EventID          uuid.UUID `json:"eventId" db:"event_id"`
+	EventName        string    `json:"eventName,omitempty" db:"event_name"`
+	CreatedAt        time.Time  `json:"createdAt" db:"createdAt"`
+	UpdatedAt        time.Time  `json:"updatedAt" db:"updatedAt"`
 }

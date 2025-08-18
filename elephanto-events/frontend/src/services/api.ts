@@ -50,8 +50,17 @@ export const adminAPI = {
   getUsers: () => 
     api.get<User[]>('/admin/users'),
   
+  getUserWithDetails: (userId: string) => 
+    api.get(`/admin/users/${userId}`),
+  
   updateUserRole: (userId: string, data: UpdateRoleRequest) => 
     api.put(`/admin/users/${userId}/role`, data),
+  
+  updateUserFull: (userId: string, data: any) => 
+    api.put(`/admin/users/${userId}`, data),
+  
+  createUser: (data: any) => 
+    api.post('/admin/users', data),
   
   getMigrationStatus: () => 
     api.get('/admin/migrations'),

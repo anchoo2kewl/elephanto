@@ -19,14 +19,16 @@ func NewSurveyResponseService(db *sql.DB) *SurveyResponseService {
 }
 
 func (s *SurveyResponseService) GetResponse(userID uuid.UUID) (*models.SurveyResponse, error) {
+	// Get response for the active event
 	var response models.SurveyResponse
 	
 	query := `
-		SELECT id, userId, fullName, email, age, gender, torontoMeaning, 
-			   personality, connectionType, instagramHandle, howHeardAboutUs, 
-			   createdAt, updatedAt 
-		FROM survey_responses 
-		WHERE userId = $1`
+		SELECT sr.id, sr.userId, sr.fullName, sr.email, sr.age, sr.gender, sr.torontoMeaning, 
+			   sr.personality, sr.connectionType, sr.instagramHandle, sr.howHeardAboutUs, 
+			   sr.event_id, sr.createdAt, sr.updatedAt 
+		FROM survey_responses sr
+		JOIN events e ON sr.event_id = e.id
+		WHERE sr.userId = $1 AND e.is_active = true`
 	
 	err := s.db.QueryRow(query, userID).Scan(
 		&response.ID,
@@ -40,6 +42,7 @@ func (s *SurveyResponseService) GetResponse(userID uuid.UUID) (*models.SurveyRes
 		&response.ConnectionType,
 		&response.InstagramHandle,
 		&response.HowHeardAboutUs,
+		&response.EventID,
 		&response.CreatedAt,
 		&response.UpdatedAt,
 	)
@@ -106,20 +109,27 @@ func (s *SurveyResponseService) CreateResponse(userID uuid.UUID, req *models.Sur
 		return nil, fmt.Errorf("invalid how heard about us value")
 	}
 	
+	// Get the active event ID
+	var activeEventID uuid.UUID
+	err = s.db.QueryRow("SELECT id FROM events WHERE is_active = true LIMIT 1").Scan(&activeEventID)
+	if err != nil {
+		return nil, fmt.Errorf("no active event found: %w", err)
+	}
+	
 	// Insert new response
 	insertQuery := `
 		INSERT INTO survey_responses (
 			userId, fullName, email, age, gender, torontoMeaning, 
-			personality, connectionType, instagramHandle, howHeardAboutUs
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
+			personality, connectionType, instagramHandle, howHeardAboutUs, event_id
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) 
 		RETURNING id, userId, fullName, email, age, gender, torontoMeaning, 
 				  personality, connectionType, instagramHandle, howHeardAboutUs, 
-				  createdAt, updatedAt`
+				  event_id, createdAt, updatedAt`
 	
 	var response models.SurveyResponse
 	err = s.db.QueryRow(insertQuery, 
 		userID, req.FullName, req.Email, req.Age, req.Gender, req.TorontoMeaning,
-		req.Personality, req.ConnectionType, req.InstagramHandle, req.HowHeardAboutUs,
+		req.Personality, req.ConnectionType, req.InstagramHandle, req.HowHeardAboutUs, activeEventID,
 	).Scan(
 		&response.ID,
 		&response.UserID,
@@ -132,6 +142,7 @@ func (s *SurveyResponseService) CreateResponse(userID uuid.UUID, req *models.Sur
 		&response.ConnectionType,
 		&response.InstagramHandle,
 		&response.HowHeardAboutUs,
+		&response.EventID,
 		&response.CreatedAt,
 		&response.UpdatedAt,
 	)

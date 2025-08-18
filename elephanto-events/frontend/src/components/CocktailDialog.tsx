@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { COCKTAIL_OPTIONS } from '@/constants/survey';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 
 interface CocktailDialogProps {
   isOpen: boolean;
@@ -8,12 +10,7 @@ interface CocktailDialogProps {
   currentPreference?: string;
 }
 
-const cocktailOptions = [
-  { value: 'beer', label: 'Beer', emoji: '🍺', description: 'Refreshing beers and lagers' },
-  { value: 'wine', label: 'Wine', emoji: '🍷', description: 'Fine wines and champagne' },
-  { value: 'cocktail', label: 'Cocktail', emoji: '🍸', description: 'Premium cocktails and spirits' },
-  { value: 'non-alcoholic', label: 'Non-Alcoholic', emoji: '🥤', description: 'Mocktails and soft drinks' },
-];
+// Using shared constants from survey.ts
 
 export const CocktailDialog: React.FC<CocktailDialogProps> = ({
   isOpen,
@@ -22,6 +19,9 @@ export const CocktailDialog: React.FC<CocktailDialogProps> = ({
   currentPreference,
 }) => {
   const [selectedPreference, setSelectedPreference] = useState<string>(currentPreference || '');
+
+  // ESC key support
+  useEscapeKey(onClose, isOpen);
 
   useEffect(() => {
     setSelectedPreference(currentPreference || '');
@@ -59,7 +59,7 @@ export const CocktailDialog: React.FC<CocktailDialogProps> = ({
 
         {/* Options */}
         <div className="p-6 space-y-3">
-          {cocktailOptions.map((option) => (
+          {COCKTAIL_OPTIONS.map((option) => (
             <label
               key={option.value}
               className={`block p-4 rounded-lg border-2 cursor-pointer transition-all duration-200 ${

@@ -35,3 +35,9 @@ Thumbs.db
 
 # Docker volumes
 postgres_data/
+# Development files
+.dev_*.pid
+.dev_*.log
+
+# Go binary
+backend/elephanto-events

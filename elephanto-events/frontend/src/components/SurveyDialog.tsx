@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { SURVEY_OPTIONS, SURVEY_LABELS } from '@/constants/survey';
+import { useEscapeKey } from '@/hooks/useEscapeKey';
 
 interface SurveyDialogProps {
   isOpen: boolean;
@@ -23,34 +25,7 @@ export interface SurveyData {
   howHeardAboutUs: string;
 }
 
-const torontoMeaningOptions = [
-  { value: 'new_beginning', label: 'A new beginning — a fresh start or transition in life' },
-  { value: 'temporary_stop', label: 'A temporary stop — just a chapter in my journey' },
-  { value: 'place_to_visit', label: 'A place to visit — a destination I enjoy or want to explore' },
-  { value: 'land_of_opportunity', label: 'A land of opportunity — a place to build wealth or career success' },
-  { value: 'home', label: 'Home — where I live, belong, and feel rooted' },
-];
-
-const personalityOptions = [
-  { value: 'Ambitious', label: 'Ambitious – You\'re highly driven and have a go-getter attitude.' },
-  { value: 'Adventurous', label: 'Adventurous - You like to travel and try out new places/things' },
-  { value: 'Balanced', label: 'Balanced – You strive for a healthy mix of productivity and personal well-being.' },
-  { value: 'Intentional', label: 'Intentional – You prefer a quieter, more mindful approach to daily life.' },
-  { value: 'Social', label: 'Social – You enjoy being around people and thrive on social energy.' },
-];
-
-const connectionTypeOptions = [
-  { value: 'Dating', label: 'Dating' },
-  { value: 'Friendship', label: 'Friendship/ meet new people' },
-  { value: 'Professional', label: 'Professional Connection' },
-];
-
-const howHeardOptions = [
-  { value: 'Instagram', label: 'Instagram' },
-  { value: 'Event Brite', label: 'Event Brite' },
-  { value: 'Friends/Family', label: 'Friends/ Family' },
-  { value: 'Facebook', label: 'Facebook' },
-];
+// Using shared constants from survey.ts
 
 export const SurveyDialog: React.FC<SurveyDialogProps> = ({
   isOpen,
@@ -72,6 +47,9 @@ export const SurveyDialog: React.FC<SurveyDialogProps> = ({
     instagramHandle: '',
     howHeardAboutUs: '',
   });
+
+  // ESC key support
+  useEscapeKey(onClose, isOpen);
 
   // Update form data when existingData changes
   useEffect(() => {
@@ -247,10 +225,10 @@ export const SurveyDialog: React.FC<SurveyDialogProps> = ({
           {/* Toronto Meaning */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              What does Toronto mean to you *
+              {SURVEY_LABELS.torontoMeaning} *
             </label>
             <div className="space-y-2">
-              {torontoMeaningOptions.map((option) => (
+              {SURVEY_OPTIONS.torontoMeaning.map((option) => (
                 <label key={option.value} className="flex items-start cursor-pointer">
                   <div className="relative mt-1">
                     <input
@@ -281,10 +259,10 @@ export const SurveyDialog: React.FC<SurveyDialogProps> = ({
           {/* Personality */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              Which of the following best describe you? *
+              {SURVEY_LABELS.personality} *
             </label>
             <div className="space-y-2">
-              {personalityOptions.map((option) => (
+              {SURVEY_OPTIONS.personality.map((option) => (
                 <label key={option.value} className="flex items-start cursor-pointer">
                   <div className="relative mt-1">
                     <input
@@ -315,10 +293,10 @@ export const SurveyDialog: React.FC<SurveyDialogProps> = ({
           {/* Connection Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              What type of connections are you looking to make at the event? *
+              {SURVEY_LABELS.connectionType} *
             </label>
             <div className="space-y-2">
-              {connectionTypeOptions.map((option) => (
+              {SURVEY_OPTIONS.connectionType.map((option) => (
                 <label key={option.value} className="flex items-center cursor-pointer">
                   <div className="relative">
                     <input
@@ -364,10 +342,10 @@ export const SurveyDialog: React.FC<SurveyDialogProps> = ({
           {/* How Heard About Us */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
-              How did you hear about us? *
+              {SURVEY_LABELS.howHeardAboutUs} *
             </label>
             <div className="space-y-2">
-              {howHeardOptions.map((option) => (
+              {SURVEY_OPTIONS.howHeardAboutUs.map((option) => (
                 <label key={option.value} className="flex items-center cursor-pointer">
                   <div className="relative">
                     <input

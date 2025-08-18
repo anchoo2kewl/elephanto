@@ -112,16 +112,3 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func getClientIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		return xff
-	}
-	
-	xri := r.Header.Get("X-Real-IP")
-	if xri != "" {
-		return xri
-	}
-	
-	return r.RemoteAddr
-}

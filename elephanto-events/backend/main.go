@@ -62,6 +62,9 @@ func main() {
 	adminHandler := handlers.NewAdminHandler(database.DB)
 	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
 	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
+	eventHandler := handlers.NewEventHandler(database.DB)
+	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
+	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -100,10 +103,38 @@ func main() {
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
 
+	// Public event endpoints (no auth required)
+	api.HandleFunc("/events/active", eventHandler.GetActiveEvent).Methods("GET")
+
 	admin := protected.PathPrefix("/admin").Subrouter()
 	admin.Use(middleware.AdminMiddleware)
+	
+	// User management
 	admin.HandleFunc("/users", adminHandler.GetUsers).Methods("GET")
+	admin.HandleFunc("/users", adminHandler.CreateUser).Methods("POST")
+	admin.HandleFunc("/users/{id}", adminHandler.GetUserWithDetails).Methods("GET")
+	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
+	
+	// Event management
+	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
+	admin.HandleFunc("/events", eventHandler.CreateEvent).Methods("POST")
+	admin.HandleFunc("/events/{id}", eventHandler.GetEvent).Methods("GET")
+	admin.HandleFunc("/events/{id}", eventHandler.UpdateEvent).Methods("PUT")
+	admin.HandleFunc("/events/{id}", eventHandler.DeleteEvent).Methods("DELETE")
+	admin.HandleFunc("/events/{id}/activate", eventHandler.ActivateEvent).Methods("PUT")
+	
+	// Event details management
+	admin.HandleFunc("/events/{eventId}/details", eventDetailHandler.CreateEventDetail).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/details/{detailId}", eventDetailHandler.UpdateEventDetail).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/details/{detailId}", eventDetailHandler.DeleteEventDetail).Methods("DELETE")
+	
+	// Event FAQ management
+	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// System
 	admin.HandleFunc("/migrations", adminHandler.GetMigrationStatus).Methods("GET")
 
 	// Add catch-all for unmatched routes (including OPTIONS)
@@ -188,6 +219,9 @@ func serve() {
 	adminHandler := handlers.NewAdminHandler(database.DB)
 	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
 	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
+	eventHandler := handlers.NewEventHandler(database.DB)
+	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
+	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -226,10 +260,38 @@ func serve() {
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
 
+	// Public event endpoints (no auth required)
+	api.HandleFunc("/events/active", eventHandler.GetActiveEvent).Methods("GET")
+
 	admin := protected.PathPrefix("/admin").Subrouter()
 	admin.Use(middleware.AdminMiddleware)
+	
+	// User management
 	admin.HandleFunc("/users", adminHandler.GetUsers).Methods("GET")
+	admin.HandleFunc("/users", adminHandler.CreateUser).Methods("POST")
+	admin.HandleFunc("/users/{id}", adminHandler.GetUserWithDetails).Methods("GET")
+	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
+	
+	// Event management
+	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
+	admin.HandleFunc("/events", eventHandler.CreateEvent).Methods("POST")
+	admin.HandleFunc("/events/{id}", eventHandler.GetEvent).Methods("GET")
+	admin.HandleFunc("/events/{id}", eventHandler.UpdateEvent).Methods("PUT")
+	admin.HandleFunc("/events/{id}", eventHandler.DeleteEvent).Methods("DELETE")
+	admin.HandleFunc("/events/{id}/activate", eventHandler.ActivateEvent).Methods("PUT")
+	
+	// Event details management
+	admin.HandleFunc("/events/{eventId}/details", eventDetailHandler.CreateEventDetail).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/details/{detailId}", eventDetailHandler.UpdateEventDetail).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/details/{detailId}", eventDetailHandler.DeleteEventDetail).Methods("DELETE")
+	
+	// Event FAQ management
+	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// System
 	admin.HandleFunc("/migrations", adminHandler.GetMigrationStatus).Methods("GET")
 
 	// Add catch-all for unmatched routes (including OPTIONS)

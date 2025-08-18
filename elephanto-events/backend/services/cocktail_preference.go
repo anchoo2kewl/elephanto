@@ -19,13 +19,19 @@ func NewCocktailPreferenceService(db *sql.DB) *CocktailPreferenceService {
 }
 
 func (s *CocktailPreferenceService) GetPreference(userID uuid.UUID) (*models.CocktailPreference, error) {
+	// Get preference for the active event
 	var preference models.CocktailPreference
 	
-	query := `SELECT id, userId, preference, createdAt, updatedAt FROM cocktail_preferences WHERE userId = $1`
+	query := `
+		SELECT cp.id, cp.userId, cp.preference, cp.event_id, cp.createdAt, cp.updatedAt 
+		FROM cocktail_preferences cp
+		JOIN events e ON cp.event_id = e.id
+		WHERE cp.userId = $1 AND e.is_active = true`
 	err := s.db.QueryRow(query, userID).Scan(
 		&preference.ID,
 		&preference.UserID,
 		&preference.Preference,
+		&preference.EventID,
 		&preference.CreatedAt,
 		&preference.UpdatedAt,
 	)
@@ -53,34 +59,43 @@ func (s *CocktailPreferenceService) SavePreference(userID uuid.UUID, preferenceV
 		return nil, fmt.Errorf("invalid preference value: %s", preferenceValue)
 	}
 	
-	// Try to update existing preference first
+	// Get the active event ID
+	var activeEventID uuid.UUID
+	err := s.db.QueryRow("SELECT id FROM events WHERE is_active = true LIMIT 1").Scan(&activeEventID)
+	if err != nil {
+		return nil, fmt.Errorf("no active event found: %w", err)
+	}
+	
+	// Try to update existing preference for this event
 	updateQuery := `
 		UPDATE cocktail_preferences 
-		SET preference = $2, updatedAt = CURRENT_TIMESTAMP 
-		WHERE userId = $1 
-		RETURNING id, userId, preference, createdAt, updatedAt`
+		SET preference = $3, updatedAt = CURRENT_TIMESTAMP 
+		WHERE userId = $1 AND event_id = $2
+		RETURNING id, userId, preference, event_id, createdAt, updatedAt`
 	
 	var preference models.CocktailPreference
-	err := s.db.QueryRow(updateQuery, userID, preferenceValue).Scan(
+	err = s.db.QueryRow(updateQuery, userID, activeEventID, preferenceValue).Scan(
 		&preference.ID,
 		&preference.UserID,
 		&preference.Preference,
+		&preference.EventID,
 		&preference.CreatedAt,
 		&preference.UpdatedAt,
 	)
 	
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// No existing preference, create new one
+			// No existing preference for this event, create new one
 			insertQuery := `
-				INSERT INTO cocktail_preferences (userId, preference) 
-				VALUES ($1, $2) 
-				RETURNING id, userId, preference, createdAt, updatedAt`
+				INSERT INTO cocktail_preferences (userId, preference, event_id) 
+				VALUES ($1, $2, $3) 
+				RETURNING id, userId, preference, event_id, createdAt, updatedAt`
 			
-			err = s.db.QueryRow(insertQuery, userID, preferenceValue).Scan(
+			err = s.db.QueryRow(insertQuery, userID, preferenceValue, activeEventID).Scan(
 				&preference.ID,
 				&preference.UserID,
 				&preference.Preference,
+				&preference.EventID,
 				&preference.CreatedAt,
 				&preference.UpdatedAt,
 			)
