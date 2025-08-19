@@ -501,3 +501,175 @@ func (h *EventHandler) getEventFAQs(eventID uuid.UUID) ([]models.EventFAQ, error
 
 	return faqs, nil
 }
+
+// GetUserAttendance returns the user's attendance status for the active event
+func (h *EventHandler) GetUserAttendance(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		http.Error(w, "User not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Get active event ID
+	var activeEventID uuid.UUID
+	err := h.db.QueryRow("SELECT id FROM events WHERE is_active = true").Scan(&activeEventID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "No active event found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get active event", http.StatusInternalServerError)
+		return
+	}
+
+	// Get user's attendance status
+	var attending bool
+	err = h.db.QueryRow(`
+		SELECT attending FROM event_attendance 
+		WHERE user_id = $1 AND event_id = $2
+	`, user.ID, activeEventID).Scan(&attending)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// No attendance record means not attending
+			attending = false
+		} else {
+			http.Error(w, "Failed to get attendance status", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	response := models.AttendanceResponse{
+		Attending: attending,
+		Message:   "Attendance status retrieved successfully",
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// UpdateUserAttendance updates the user's attendance status for the active event
+func (h *EventHandler) UpdateUserAttendance(w http.ResponseWriter, r *http.Request) {
+	user, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		http.Error(w, "User not found", http.StatusInternalServerError)
+		return
+	}
+
+	var req models.AttendanceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get active event ID
+	var activeEventID uuid.UUID
+	err := h.db.QueryRow("SELECT id FROM events WHERE is_active = true").Scan(&activeEventID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "No active event found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get active event", http.StatusInternalServerError)
+		return
+	}
+
+	// Upsert attendance record
+	_, err = h.db.Exec(`
+		INSERT INTO event_attendance (user_id, event_id, attending)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id, event_id)
+		DO UPDATE SET attending = $3, updated_at = CURRENT_TIMESTAMP
+	`, user.ID, activeEventID, req.Attending)
+
+	if err != nil {
+		http.Error(w, "Failed to update attendance", http.StatusInternalServerError)
+		return
+	}
+
+	message := "Attendance updated successfully"
+	if req.Attending {
+		message = "You are now marked as attending!"
+	} else {
+		message = "You are no longer marked as attending"
+	}
+
+	response := models.AttendanceResponse{
+		Attending: req.Attending,
+		Message:   message,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
+// GetEventAttendanceStats returns attendance statistics for an event (admin only)
+func (h *EventHandler) GetEventAttendanceStats(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get attendance statistics
+	var totalAttending, totalNotAttending int
+	
+	err = h.db.QueryRow(`
+		SELECT 
+			COUNT(CASE WHEN attending = true THEN 1 END) as attending_count,
+			COUNT(CASE WHEN attending = false THEN 1 END) as not_attending_count
+		FROM event_attendance 
+		WHERE event_id = $1
+	`, eventID).Scan(&totalAttending, &totalNotAttending)
+
+	if err != nil {
+		http.Error(w, "Failed to get attendance statistics", http.StatusInternalServerError)
+		return
+	}
+
+	// Get list of attending users with basic info
+	rows, err := h.db.Query(`
+		SELECT u.id, u.name, u.email, ea.created_at, ea.updated_at
+		FROM event_attendance ea
+		JOIN users u ON ea.user_id = u.id
+		WHERE ea.event_id = $1 AND ea.attending = true
+		ORDER BY u.name
+	`, eventID)
+	if err != nil {
+		http.Error(w, "Failed to get attending users", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var attendingUsers []map[string]interface{}
+	for rows.Next() {
+		var userID, name, email string
+		var createdAt, updatedAt time.Time
+		
+		err := rows.Scan(&userID, &name, &email, &createdAt, &updatedAt)
+		if err != nil {
+			http.Error(w, "Failed to scan attending user", http.StatusInternalServerError)
+			return
+		}
+		
+		attendingUsers = append(attendingUsers, map[string]interface{}{
+			"id":        userID,
+			"name":      name,
+			"email":     email,
+			"createdAt": createdAt,
+			"updatedAt": updatedAt,
+		})
+	}
+
+	response := map[string]interface{}{
+		"eventId":           eventID,
+		"totalAttending":    totalAttending,
+		"totalNotAttending": totalNotAttending,
+		"totalResponses":    totalAttending + totalNotAttending,
+		"attendingUsers":    attendingUsers,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}

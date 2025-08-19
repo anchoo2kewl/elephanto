@@ -102,6 +102,10 @@ func main() {
 	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
+	
+	// Event attendance endpoints (requires auth)
+	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
+	protected.HandleFunc("/events/attendance", eventHandler.UpdateUserAttendance).Methods("POST")
 
 	// Public event endpoints (no auth required)
 	api.HandleFunc("/events/active", eventHandler.GetActiveEvent).Methods("GET")
@@ -115,6 +119,7 @@ func main() {
 	admin.HandleFunc("/users/{id}", adminHandler.GetUserWithDetails).Methods("GET")
 	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
+	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
@@ -123,6 +128,7 @@ func main() {
 	admin.HandleFunc("/events/{id}", eventHandler.UpdateEvent).Methods("PUT")
 	admin.HandleFunc("/events/{id}", eventHandler.DeleteEvent).Methods("DELETE")
 	admin.HandleFunc("/events/{id}/activate", eventHandler.ActivateEvent).Methods("PUT")
+	admin.HandleFunc("/events/{id}/attendance", eventHandler.GetEventAttendanceStats).Methods("GET")
 	
 	// Event details management
 	admin.HandleFunc("/events/{eventId}/details", eventDetailHandler.CreateEventDetail).Methods("POST")
@@ -259,6 +265,10 @@ func serve() {
 	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
+	
+	// Event attendance endpoints (requires auth)
+	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
+	protected.HandleFunc("/events/attendance", eventHandler.UpdateUserAttendance).Methods("POST")
 
 	// Public event endpoints (no auth required)
 	api.HandleFunc("/events/active", eventHandler.GetActiveEvent).Methods("GET")
@@ -272,6 +282,7 @@ func serve() {
 	admin.HandleFunc("/users/{id}", adminHandler.GetUserWithDetails).Methods("GET")
 	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
+	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
@@ -280,6 +291,7 @@ func serve() {
 	admin.HandleFunc("/events/{id}", eventHandler.UpdateEvent).Methods("PUT")
 	admin.HandleFunc("/events/{id}", eventHandler.DeleteEvent).Methods("DELETE")
 	admin.HandleFunc("/events/{id}/activate", eventHandler.ActivateEvent).Methods("PUT")
+	admin.HandleFunc("/events/{id}/attendance", eventHandler.GetEventAttendanceStats).Methods("GET")
 	
 	// Event details management
 	admin.HandleFunc("/events/{eventId}/details", eventDetailHandler.CreateEventDetail).Methods("POST")
