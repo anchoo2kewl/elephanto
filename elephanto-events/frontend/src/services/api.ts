@@ -1,27 +1,33 @@
 import axios from 'axios';
 import { AuthResponse, LoginRequest, UpdateProfileRequest, UpdateRoleRequest, User } from '@/types';
 
-// Get API URL from runtime config or fallback to environment variables
+// Get API URL dynamically at request time
 const getAPIURL = () => {
   // First try to get from runtime config injected by container startup
   if (typeof window !== 'undefined' && (window as any).__APP_CONFIG__?.API_URL !== undefined) {
     const runtimeApiUrl = (window as any).__APP_CONFIG__.API_URL;
-    // If runtime config is empty string, use current domain
-    return runtimeApiUrl === '' ? window.location.origin : runtimeApiUrl;
+    // If runtime config is not empty, use it directly
+    if (runtimeApiUrl !== '') {
+      return runtimeApiUrl;
+    }
+    // If runtime config is empty, use current domain (production case)
+    return window.location.origin;
   }
   
   // Fallback to build-time environment variable (for development)
-  return (import.meta as any).env.VITE_API_URL !== undefined ? (import.meta as any).env.VITE_API_URL : 'http://localhost:8080';
+  return (import.meta as any).env.VITE_API_URL || 'http://localhost:8080';
 };
 
-const API_URL = getAPIURL();
-
+// Create axios instance without fixed baseURL
 const api = axios.create({
-  baseURL: `${API_URL}/api`,
   withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {
+  // Set baseURL dynamically for each request
+  const apiUrl = getAPIURL();
+  config.baseURL = `${apiUrl}/api`;
+  
   const token = localStorage.getItem('auth_token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
