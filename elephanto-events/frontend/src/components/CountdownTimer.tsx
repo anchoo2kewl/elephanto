@@ -18,7 +18,8 @@ export const CountdownTimer: React.FC<CountdownTimerProps> = ({
 
   useEffect(() => {
     const calculateTimeLeft = () => {
-      const target = new Date(`${targetDate}T18:30:00`).getTime(); // 6:30 PM on target date
+      // Create target date in Toronto timezone (18:30 ET)
+      const target = new Date(`${targetDate}T18:30:00-04:00`).getTime(); // 6:30 PM EDT (Toronto time)
       const now = new Date().getTime();
       const difference = target - now;
 

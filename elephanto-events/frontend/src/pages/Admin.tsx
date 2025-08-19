@@ -964,8 +964,8 @@ export const Admin: React.FC = () => {
                 <div>
                   <label className="block text-white/80 text-sm mb-2">Date</label>
                   <input
-                    type="datetime-local"
-                    value={selectedEvent.date ? new Date(selectedEvent.date).toISOString().slice(0, 16) : ''}
+                    type="date"
+                    value={selectedEvent.date ? new Date(selectedEvent.date + 'T00:00:00').toISOString().slice(0, 10) : ''}
                     onChange={(e) => setSelectedEvent({...selectedEvent, date: e.target.value})}
                     className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
                   />
