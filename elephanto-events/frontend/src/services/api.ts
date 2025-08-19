@@ -6,16 +6,20 @@ const getAPIURL = () => {
   // First try to get from runtime config injected by container startup
   if (typeof window !== 'undefined' && (window as any).__APP_CONFIG__?.API_URL !== undefined) {
     const runtimeApiUrl = (window as any).__APP_CONFIG__.API_URL;
+    console.log('Runtime API URL:', runtimeApiUrl);
     // If runtime config is not empty, use it directly
     if (runtimeApiUrl !== '') {
       return runtimeApiUrl;
     }
     // If runtime config is empty, use current domain (production case)
+    console.log('Using current domain:', window.location.origin);
     return window.location.origin;
   }
   
   // Fallback to build-time environment variable (for development)
-  return (import.meta as any).env.VITE_API_URL || 'http://localhost:8080';
+  const fallback = (import.meta as any).env.VITE_API_URL || 'http://localhost:8080';
+  console.log('Using fallback API URL:', fallback);
+  return fallback;
 };
 
 // Create axios instance without fixed baseURL
@@ -26,7 +30,10 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   // Set baseURL dynamically for each request
   const apiUrl = getAPIURL();
+  
+  // Backend always expects /api prefix in both local and production
   config.baseURL = `${apiUrl}/api`;
+  console.log('Final baseURL:', config.baseURL);
   
   const token = localStorage.getItem('auth_token');
   if (token) {
