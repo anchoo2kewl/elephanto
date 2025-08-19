@@ -252,7 +252,7 @@ export const Dashboard: React.FC = () => {
               Welcome back, {user?.name || 'Friend'}! 👋
             </h1>
             <p className="text-xs sm:text-base text-gray-700 dark:text-gray-300 mb-4">
-              Get ready for {event.title} - {new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}
+              Get ready for {event.title} - {new Date(event.date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}
             </p>
           </div>
           
@@ -260,7 +260,7 @@ export const Dashboard: React.FC = () => {
           {event.countdownEnabled && (
             <div className="bg-black/20 rounded-lg p-4">
               <h2 className="text-lg font-semibold text-white mb-3">Event Countdown</h2>
-              <CountdownTimer targetDate={event.date} />
+              <CountdownTimer targetDate={event.date.split('T')[0]} />
             </div>
           )}
         </div>
