@@ -4,15 +4,15 @@ FROM node:18-alpine AS builder
 WORKDIR /app
 
 # Accept build arguments
-ARG VITE_API_URL=http://localhost:8080
+ARG VITE_API_URL=""
 
 # Log what we're building with
 RUN echo "=========================================="
 RUN echo "FRONTEND BUILD STARTING"
-RUN echo "🔧 VITE_API_URL = $VITE_API_URL"
+RUN echo "🔧 VITE_API_URL = $VITE_API_URL (empty for runtime config)"
 RUN echo "=========================================="
 
-# Set environment variable for build
+# Only set environment variable if provided (for runtime config)
 ENV VITE_API_URL=$VITE_API_URL
 
 COPY package*.json ./
