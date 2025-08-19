@@ -5,7 +5,9 @@ import { AuthResponse, LoginRequest, UpdateProfileRequest, UpdateRoleRequest, Us
 const getAPIURL = () => {
   // First try to get from runtime config injected by container startup
   if (typeof window !== 'undefined' && (window as any).__APP_CONFIG__?.API_URL !== undefined) {
-    return (window as any).__APP_CONFIG__.API_URL;
+    const runtimeApiUrl = (window as any).__APP_CONFIG__.API_URL;
+    // If runtime config is empty string, use current domain
+    return runtimeApiUrl === '' ? window.location.origin : runtimeApiUrl;
   }
   
   // Fallback to build-time environment variable (for development)
