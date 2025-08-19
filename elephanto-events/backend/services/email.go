@@ -4,16 +4,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/smtp"
 )
 
 type EmailService struct {
-	service    string
-	brevoKey   string
-	smtpHost   string
-	smtpPort   int
-	frontendURL string
+	service               string
+	brevoKey              string
+	smtpHost              string
+	smtpPort              int
+	frontendURL           string
+	emailServiceOverride  bool
 }
 
 type BrevoEmail struct {
@@ -32,13 +34,14 @@ type BrevoContact struct {
 	Email string `json:"email"`
 }
 
-func NewEmailService(service, brevoKey, smtpHost string, smtpPort int, frontendURL string) *EmailService {
+func NewEmailService(service, brevoKey, smtpHost string, smtpPort int, frontendURL string, emailServiceOverride bool) *EmailService {
 	return &EmailService{
-		service:     service,
-		brevoKey:    brevoKey,
-		smtpHost:    smtpHost,
-		smtpPort:    smtpPort,
-		frontendURL: frontendURL,
+		service:               service,
+		brevoKey:              brevoKey,
+		smtpHost:              smtpHost,
+		smtpPort:              smtpPort,
+		frontendURL:           frontendURL,
+		emailServiceOverride:  emailServiceOverride,
 	}
 }
 
@@ -103,14 +106,37 @@ func (e *EmailService) SendMagicLink(email, token, origin string) error {
 		</html>
 	`, magicLink, magicLink, email)
 
-	switch e.service {
+	// Determine which email service to use
+	emailService := e.determineEmailService(origin)
+	
+	switch emailService {
 	case "brevo":
 		return e.sendViaBrevo(email, subject, htmlContent)
 	case "mailpit":
 		return e.sendViaSMTP(email, subject, htmlContent)
 	default:
-		return fmt.Errorf("unsupported email service: %s", e.service)
+		return fmt.Errorf("unsupported email service: %s", emailService)
 	}
+}
+
+// determineEmailService decides which email service to use based on the request origin
+func (e *EmailService) determineEmailService(origin string) string {
+	// If email service override is not enabled, use the configured service
+	if !e.emailServiceOverride {
+		return e.service
+	}
+	
+	// Domain-based routing when override is enabled
+	if origin == "https://velvethour.ca" {
+		// Use Brevo for velvethour.ca production domain
+		return "brevo"
+	}
+	
+	// Use mailpit for all other cases:
+	// - https://elephantoevents.ca (testing domain)
+	// - localhost (local development)
+	// - any other domain
+	return "mailpit"
 }
 
 func (e *EmailService) sendViaBrevo(email, subject, htmlContent string) error {
@@ -120,8 +146,8 @@ func (e *EmailService) sendViaBrevo(email, subject, htmlContent string) error {
 
 	emailData := BrevoEmail{
 		Sender: BrevoSender{
-			Email: "noreply@elephantto-events.com",
-			Name:  "ElephantTO Events",
+			Email: "info@velvethour.ca",
+			Name:  "ElephantoEvents",
 		},
 		To: []BrevoContact{
 			{Email: email},
@@ -151,14 +177,19 @@ func (e *EmailService) sendViaBrevo(email, subject, htmlContent string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to send email, status code: %d", resp.StatusCode)
+		// Read response body to get more detailed error information
+		body, bodyErr := io.ReadAll(resp.Body)
+		if bodyErr != nil {
+			return fmt.Errorf("failed to send email, status code: %d (could not read response body: %v)", resp.StatusCode, bodyErr)
+		}
+		return fmt.Errorf("failed to send email, status code: %d, response: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
 }
 
 func (e *EmailService) sendViaSMTP(email, subject, htmlContent string) error {
-	from := "noreply@elephantto-events.com"
+	from := "info@velvethour.ca"
 	
 	fmt.Printf("Attempting to send email to %s via SMTP %s:%d\n", email, e.smtpHost, e.smtpPort)
 	

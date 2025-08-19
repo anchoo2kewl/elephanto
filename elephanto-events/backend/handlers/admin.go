@@ -416,9 +416,9 @@ func (h *AdminHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 	// Log admin action
 	_, err = tx.Exec(`
-		INSERT INTO adminAuditLogs (adminId, targetUserId, action, oldValue, newValue, ipAddress)
-		VALUES ($1, $2, 'user_create', '', $3, $4)
-	`, admin.ID, userID, req.Email, getClientIP(r))
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
+		VALUES ($1, $2, 'user_create', '{}', $3::jsonb, $4)
+	`, admin.ID, userID, fmt.Sprintf(`{"email": "%s"}`, req.Email), getClientIP(r))
 	if err != nil {
 		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
 		return
@@ -519,8 +519,8 @@ func (h *AdminHandler) UpdateUserFull(w http.ResponseWriter, r *http.Request) {
 
 	// Log admin action
 	_, err = tx.Exec(`
-		INSERT INTO adminAuditLogs (adminId, targetUserId, action, oldValue, newValue, ipAddress)
-		VALUES ($1, $2, 'user_update', '', 'full_profile_update', $3)
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
+		VALUES ($1, $2, 'user_update', '{}', '{"action": "full_profile_update"}'::jsonb, $3)
 	`, admin.ID, userID, getClientIP(r))
 	if err != nil {
 		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
@@ -535,6 +535,381 @@ func (h *AdminHandler) UpdateUserFull(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "User updated successfully",
+	})
+}
+
+// UpdateUserSurvey updates a user's survey response (admin only)
+func (h *AdminHandler) UpdateUserSurvey(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	admin, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		http.Error(w, "Admin not found", http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		ID               string      `json:"id,omitempty"`               // Ignore extra fields
+		UserID           string      `json:"userId,omitempty"`           // Ignore extra fields  
+		EventID          string      `json:"eventId,omitempty"`          // Ignore extra fields
+		EventName        string      `json:"eventName,omitempty"`        // Ignore extra fields
+		CreatedAt        string      `json:"createdAt,omitempty"`        // Ignore extra fields
+		UpdatedAt        string      `json:"updatedAt,omitempty"`        // Ignore extra fields
+		FullName         string      `json:"fullName"`
+		Email            string      `json:"email"`
+		Age              interface{} `json:"age"`  // Accept both string and number
+		Gender           string      `json:"gender"`
+		TorontoMeaning   string      `json:"torontoMeaning"`
+		Personality      string      `json:"personality"`
+		ConnectionType   string      `json:"connectionType"`
+		InstagramHandle  string      `json:"instagramHandle"`
+		HowHeardAboutUs  string      `json:"howHeardAboutUs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("Failed to decode survey request body: %v", err)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Convert age interface{} to int
+	age := 0
+	if req.Age != nil {
+		switch v := req.Age.(type) {
+		case string:
+			if v != "" {
+				if parsedAge, err := strconv.Atoi(v); err == nil && parsedAge >= 18 && parsedAge <= 100 {
+					age = parsedAge
+				} else {
+					http.Error(w, "Age must be a number between 18 and 100", http.StatusBadRequest)
+					return
+				}
+			}
+		case float64:
+			if v >= 18 && v <= 100 {
+				age = int(v)
+			} else {
+				http.Error(w, "Age must be a number between 18 and 100", http.StatusBadRequest)
+				return
+			}
+		case int:
+			if v >= 18 && v <= 100 {
+				age = v
+			} else {
+				http.Error(w, "Age must be a number between 18 and 100", http.StatusBadRequest)
+				return
+			}
+		default:
+			if v != nil {
+				http.Error(w, "Age must be a number", http.StatusBadRequest)
+				return
+			}
+		}
+	}
+
+	// Validate that we have at least some meaningful data to save
+	hasAge := age > 0
+	if req.FullName == "" && req.Email == "" && !hasAge && req.Gender == "" && 
+	   req.TorontoMeaning == "" && req.Personality == "" && req.ConnectionType == "" && req.HowHeardAboutUs == "" {
+		http.Error(w, "At least one survey field must be provided", http.StatusBadRequest)
+		return
+	}
+
+	// Handle nullable instagram handle
+	var instagramHandle *string
+	if req.InstagramHandle != "" {
+		instagramHandle = &req.InstagramHandle
+	}
+
+	// Validate required fields that are not empty
+	if req.Gender != "" {
+		validGenders := map[string]bool{"Male": true, "Female": true, "Other": true}
+		if !validGenders[req.Gender] {
+			http.Error(w, "Invalid gender. Must be Male, Female, or Other", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if req.TorontoMeaning != "" {
+		validMeanings := map[string]bool{
+			"new_beginning": true, "temporary_stop": true, "place_to_visit": true, 
+			"land_of_opportunity": true, "home": true,
+		}
+		if !validMeanings[req.TorontoMeaning] {
+			http.Error(w, "Invalid Toronto meaning", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if req.Personality != "" {
+		validPersonalities := map[string]bool{
+			"Ambitious": true, "Adventurous": true, "Balanced": true, 
+			"Intentional": true, "Social": true,
+		}
+		if !validPersonalities[req.Personality] {
+			http.Error(w, "Invalid personality type", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if req.ConnectionType != "" {
+		validConnections := map[string]bool{"Dating": true, "Friendship": true, "Professional": true}
+		if !validConnections[req.ConnectionType] {
+			http.Error(w, "Invalid connection type", http.StatusBadRequest)
+			return
+		}
+	}
+
+	if req.HowHeardAboutUs != "" {
+		validSources := map[string]bool{"Instagram": true, "Event Brite": true, "Friends/Family": true, "Facebook": true}
+		if !validSources[req.HowHeardAboutUs] {
+			http.Error(w, "Invalid source for how heard about us", http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Get active event
+	var activeEventID uuid.UUID
+	err = h.db.QueryRow("SELECT id FROM events WHERE is_active = true").Scan(&activeEventID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "No active event found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get active event", http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Check if survey response already exists
+	var existingID uuid.UUID
+	err = tx.QueryRow("SELECT id FROM survey_responses WHERE userId = $1", userID).Scan(&existingID)
+	
+	if err == sql.ErrNoRows {
+		// No existing survey - create new one with default values for missing required fields
+		fullName := req.FullName
+		if fullName == "" {
+			fullName = "Not provided"
+		}
+		email := req.Email
+		if email == "" {
+			email = "not-provided@example.com"
+		}
+		finalAge := age
+		if finalAge == 0 {
+			finalAge = 25 // default age
+		}
+		gender := req.Gender
+		if gender == "" {
+			gender = "Other"
+		}
+		torontoMeaning := req.TorontoMeaning
+		if torontoMeaning == "" {
+			torontoMeaning = "home"
+		}
+		personality := req.Personality
+		if personality == "" {
+			personality = "Balanced"
+		}
+		connectionType := req.ConnectionType
+		if connectionType == "" {
+			connectionType = "Friendship"
+		}
+		howHeard := req.HowHeardAboutUs
+		if howHeard == "" {
+			howHeard = "Instagram"
+		}
+		
+		// Insert new survey response
+		_, err = tx.Exec(`
+			INSERT INTO survey_responses (id, userId, fullName, email, age, gender, torontoMeaning, personality, connectionType, instagramHandle, howHeardAboutUs, event_id)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		`, uuid.New(), userID, fullName, email, finalAge, gender, torontoMeaning, personality, connectionType, instagramHandle, howHeard, activeEventID)
+	} else if err != nil {
+		log.Printf("Failed to check existing survey response: %v", err)
+		http.Error(w, "Failed to check existing survey response", http.StatusInternalServerError)
+		return
+	} else {
+		// Update existing survey response - only update non-empty fields
+		setParts := []string{}
+		args := []interface{}{}
+		argIndex := 1
+		
+		if req.FullName != "" {
+			setParts = append(setParts, "fullName = $"+strconv.Itoa(argIndex))
+			args = append(args, req.FullName)
+			argIndex++
+		}
+		if req.Email != "" {
+			setParts = append(setParts, "email = $"+strconv.Itoa(argIndex))
+			args = append(args, req.Email)
+			argIndex++
+		}
+		if age > 0 {
+			setParts = append(setParts, "age = $"+strconv.Itoa(argIndex))
+			args = append(args, age)
+			argIndex++
+		}
+		if req.Gender != "" {
+			setParts = append(setParts, "gender = $"+strconv.Itoa(argIndex))
+			args = append(args, req.Gender)
+			argIndex++
+		}
+		if req.TorontoMeaning != "" {
+			setParts = append(setParts, "torontoMeaning = $"+strconv.Itoa(argIndex))
+			args = append(args, req.TorontoMeaning)
+			argIndex++
+		}
+		if req.Personality != "" {
+			setParts = append(setParts, "personality = $"+strconv.Itoa(argIndex))
+			args = append(args, req.Personality)
+			argIndex++
+		}
+		if req.ConnectionType != "" {
+			setParts = append(setParts, "connectionType = $"+strconv.Itoa(argIndex))
+			args = append(args, req.ConnectionType)
+			argIndex++
+		}
+		if instagramHandle != nil {
+			setParts = append(setParts, "instagramHandle = $"+strconv.Itoa(argIndex))
+			args = append(args, instagramHandle)
+			argIndex++
+		}
+		if req.HowHeardAboutUs != "" {
+			setParts = append(setParts, "howHeardAboutUs = $"+strconv.Itoa(argIndex))
+			args = append(args, req.HowHeardAboutUs)
+			argIndex++
+		}
+		
+		// Always update event_id and updatedAt
+		setParts = append(setParts, "event_id = $"+strconv.Itoa(argIndex))
+		args = append(args, activeEventID)
+		argIndex++
+		setParts = append(setParts, "updatedAt = CURRENT_TIMESTAMP")
+		
+		if len(setParts) > 2 { // More than just event_id and updatedAt
+			args = append(args, userID)
+			query := "UPDATE survey_responses SET " + setParts[0]
+			for i := 1; i < len(setParts); i++ {
+				query += ", " + setParts[i]
+			}
+			query += " WHERE userId = $" + strconv.Itoa(argIndex)
+			
+			_, err = tx.Exec(query, args...)
+		}
+	}
+
+	if err != nil {
+		log.Printf("Failed to update survey response: %v", err)
+		http.Error(w, "Failed to update survey response", http.StatusInternalServerError)
+		return
+	}
+
+	// Log admin action
+	_, err = tx.Exec(`
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
+		VALUES ($1, $2, 'survey_update', '{}', '{"action": "survey_response_update"}'::jsonb, $3)
+	`, admin.ID, userID, getClientIP(r))
+	if err != nil {
+		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Survey response updated successfully",
+	})
+}
+
+// UpdateUserCocktail updates a user's cocktail preference (admin only)
+func (h *AdminHandler) UpdateUserCocktail(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	admin, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		http.Error(w, "Admin not found", http.StatusInternalServerError)
+		return
+	}
+
+	var req struct {
+		Preference string `json:"preference"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Get active event
+	var activeEventID uuid.UUID
+	err = h.db.QueryRow("SELECT id FROM events WHERE is_active = true").Scan(&activeEventID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "No active event found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to get active event", http.StatusInternalServerError)
+		return
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Upsert cocktail preference
+	_, err = tx.Exec(`
+		INSERT INTO cocktail_preferences (id, userId, preference, event_id)
+		VALUES (COALESCE((SELECT id FROM cocktail_preferences WHERE userId = $1), $3), $1, $4, $2)
+		ON CONFLICT (userId)
+		DO UPDATE SET preference = $4, event_id = $2, updatedAt = CURRENT_TIMESTAMP
+	`, userID, activeEventID, uuid.New(), req.Preference)
+
+	if err != nil {
+		log.Printf("Failed to update cocktail preference: %v", err)
+		http.Error(w, "Failed to update cocktail preference", http.StatusInternalServerError)
+		return
+	}
+
+	// Log admin action
+	_, err = tx.Exec(`
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
+		VALUES ($1, $2, 'cocktail_update', '{}', '{"action": "cocktail_preference_update"}'::jsonb, $3)
+	`, admin.ID, userID, getClientIP(r))
+	if err != nil {
+		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Cocktail preference updated successfully",
 	})
 }
 

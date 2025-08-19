@@ -7,15 +7,16 @@ import (
 )
 
 type Config struct {
-	DatabaseURL  string
-	JWTSecret    string
-	EmailService string
-	BrevoAPIKey  string
-	SMTPHost     string
-	SMTPPort     int
-	FrontendURL  string
-	Port         string
-	AutoMigrate  bool
+	DatabaseURL            string
+	JWTSecret              string
+	EmailService           string
+	BrevoAPIKey            string
+	SMTPHost               string
+	SMTPPort               int
+	FrontendURL            string
+	Port                   string
+	AutoMigrate            bool
+	EmailServiceOverride   bool
 }
 
 func Load() *Config {
@@ -31,16 +32,23 @@ func Load() *Config {
 		autoMigrate = true
 	}
 
+	emailServiceOverride, err := strconv.ParseBool(getEnv("EMAIL_SERVICE_OVERRIDE", "false"))
+	if err != nil {
+		log.Printf("Invalid EMAIL_SERVICE_OVERRIDE, using default false: %v", err)
+		emailServiceOverride = false
+	}
+
 	return &Config{
-		DatabaseURL:  getEnv("DATABASE_URL", ""),
-		JWTSecret:    getEnv("JWT_SECRET", "default-secret-change-me"),
-		EmailService: getEnv("EMAIL_SERVICE", "mailpit"),
-		BrevoAPIKey:  getEnv("BREVO_API_KEY", ""),
-		SMTPHost:     getEnv("SMTP_HOST", "localhost"),
-		SMTPPort:     smtpPort,
-		FrontendURL:  getEnv("FRONTEND_URL", "http://localhost:3000"),
-		Port:         getEnv("PORT", "8080"),
-		AutoMigrate:  autoMigrate,
+		DatabaseURL:            getEnv("DATABASE_URL", ""),
+		JWTSecret:              getEnv("JWT_SECRET", "default-secret-change-me"),
+		EmailService:           getEnv("EMAIL_SERVICE", "mailpit"),
+		BrevoAPIKey:            getEnv("BREVO_API_KEY", ""),
+		SMTPHost:               getEnv("SMTP_HOST", "localhost"),
+		SMTPPort:               smtpPort,
+		FrontendURL:            getEnv("FRONTEND_URL", "http://localhost:3000"),
+		Port:                   getEnv("PORT", "8080"),
+		AutoMigrate:            autoMigrate,
+		EmailServiceOverride:   emailServiceOverride,
 	}
 }
 

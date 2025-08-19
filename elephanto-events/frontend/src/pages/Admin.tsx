@@ -165,6 +165,18 @@ export const Admin: React.FC = () => {
           isOnboarded: editingUser.isOnboarded
         };
         await adminAPI.updateUserFull(editingUser.id, updateData);
+        
+        // Update survey response if it exists
+        if (editingUser.surveyResponse) {
+          await adminAPI.updateUserSurvey(editingUser.id, editingUser.surveyResponse);
+        }
+        
+        // Update cocktail preference if it exists
+        if (editingUser.cocktailPreference) {
+          await adminAPI.updateUserCocktail(editingUser.id, {
+            preference: editingUser.cocktailPreference.preference
+          });
+        }
       } else {
         const createData = {
           email: editingUser.email,
@@ -172,7 +184,20 @@ export const Admin: React.FC = () => {
           role: editingUser.role,
           isOnboarded: editingUser.isOnboarded
         };
-        await adminAPI.createUser(createData);
+        const createResult = await adminAPI.createUser(createData);
+        const userId = createResult.data.id;
+        
+        // Create survey response for new user if provided
+        if (editingUser.surveyResponse && editingUser.surveyResponse.age) {
+          await adminAPI.updateUserSurvey(userId, editingUser.surveyResponse);
+        }
+        
+        // Create cocktail preference for new user if provided
+        if (editingUser.cocktailPreference && editingUser.cocktailPreference.preference) {
+          await adminAPI.updateUserCocktail(userId, {
+            preference: editingUser.cocktailPreference.preference
+          });
+        }
       }
       await loadData();
       setEditingUser(null);
@@ -465,7 +490,33 @@ export const Admin: React.FC = () => {
                 name: '',
                 role: 'user',
                 isOnboarded: false,
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                surveyResponse: {
+                  id: '',
+                  userId: '',
+                  fullName: '',
+                  email: '',
+                  age: '',
+                  gender: '',
+                  torontoMeaning: '',
+                  personality: '',
+                  connectionType: '',
+                  instagramHandle: '',
+                  howHeardAboutUs: '',
+                  eventId: '',
+                  eventName: '',
+                  createdAt: '',
+                  updatedAt: ''
+                },
+                cocktailPreference: {
+                  id: '',
+                  userId: '',
+                  preference: '',
+                  eventId: '',
+                  eventName: '',
+                  createdAt: '',
+                  updatedAt: ''
+                }
               })}
               className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
             >
@@ -833,23 +884,132 @@ export const Admin: React.FC = () => {
                   </div>
                 )}
                 
-                {!editingUser.surveyResponse && (
+                {!editingUser.surveyResponse && editingUser.id && (
+                  <div className="space-y-3">
+                    <div className="text-center py-2 text-white/60 text-sm">
+                      <FileText className="h-6 w-6 mx-auto mb-1" />
+                      User hasn't completed survey - you can add it below
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-1">{SURVEY_LABELS.age}</label>
+                      <input
+                        type="text"
+                        value=""
+                        onChange={(e) => setEditingUser({
+                          ...editingUser, 
+                          surveyResponse: {
+                            id: '',
+                            userId: editingUser.id,
+                            fullName: editingUser.name || '',
+                            email: editingUser.email,
+                            age: e.target.value,
+                            gender: '',
+                            torontoMeaning: '',
+                            personality: '',
+                            connectionType: '',
+                            instagramHandle: '',
+                            howHeardAboutUs: '',
+                            eventId: '',
+                            eventName: '',
+                            createdAt: '',
+                            updatedAt: ''
+                          }
+                        })}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Age"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-1">{SURVEY_LABELS.gender}</label>
+                      <div className="space-y-2">
+                        {['Male', 'Female', 'Other'].map((option) => (
+                          <label key={option} className="flex items-center cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`gender-existing-${editingUser.id}`}
+                              value={option}
+                              checked={false}
+                              onChange={(e) => setEditingUser({
+                                ...editingUser, 
+                                surveyResponse: {
+                                  id: '',
+                                  userId: editingUser.id,
+                                  fullName: editingUser.name || '',
+                                  email: editingUser.email,
+                                  age: '',
+                                  gender: e.target.value,
+                                  torontoMeaning: '',
+                                  personality: '',
+                                  connectionType: '',
+                                  instagramHandle: '',
+                                  howHeardAboutUs: '',
+                                  eventId: '',
+                                  eventName: '',
+                                  createdAt: '',
+                                  updatedAt: ''
+                                }
+                              })}
+                              className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                            />
+                            <span className="ml-2 text-white/80 text-sm">{option}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-1">{SURVEY_LABELS.instagramHandle}</label>
+                      <input
+                        type="text"
+                        value=""
+                        onChange={(e) => setEditingUser({
+                          ...editingUser, 
+                          surveyResponse: {
+                            id: '',
+                            userId: editingUser.id,
+                            fullName: editingUser.name || '',
+                            email: editingUser.email,
+                            age: '',
+                            gender: '',
+                            torontoMeaning: '',
+                            personality: '',
+                            connectionType: '',
+                            instagramHandle: e.target.value,
+                            howHeardAboutUs: '',
+                            eventId: '',
+                            eventName: '',
+                            createdAt: '',
+                            updatedAt: ''
+                          }
+                        })}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="@username"
+                      />
+                    </div>
+                  </div>
+                )}
+                
+                {!editingUser.id && (
                   <div className="text-center py-4 text-white/60">
                     <FileText className="h-8 w-8 mx-auto mb-2" />
-                    <p className="text-sm">No survey data available</p>
+                    <p className="text-sm">Survey information will be filled in below</p>
                   </div>
                 )}
               </div>
             </div>
             
             {/* Survey Details */}
-            {editingUser.surveyResponse && (
+            {editingUser.id && (
               <div className="mt-6 space-y-6">
                 <div className="flex items-center justify-between border-b border-white/20 pb-2">
                   <h4 className="text-lg font-medium text-white">Survey Details</h4>
-                  <span className="text-sm text-purple-300 bg-purple-600/20 px-2 py-1 rounded">
-                    Event: {editingUser.surveyResponse.eventName || editingUser.surveyResponse.eventId}
-                  </span>
+                  {editingUser.surveyResponse && (
+                    <span className="text-sm text-purple-300 bg-purple-600/20 px-2 py-1 rounded">
+                      Event: {editingUser.surveyResponse.eventName || editingUser.surveyResponse.eventId}
+                    </span>
+                  )}
                 </div>
                 
                 <div>
@@ -864,7 +1024,25 @@ export const Admin: React.FC = () => {
                           checked={editingUser.surveyResponse?.torontoMeaning === option.value}
                           onChange={(e) => setEditingUser({
                             ...editingUser, 
-                            surveyResponse: {...editingUser.surveyResponse, torontoMeaning: e.target.value}
+                            surveyResponse: editingUser.surveyResponse ? 
+                              {...editingUser.surveyResponse, torontoMeaning: e.target.value} :
+                              {
+                                id: '',
+                                userId: editingUser.id,
+                                fullName: editingUser.name || '',
+                                email: editingUser.email,
+                                age: '',
+                                gender: '',
+                                torontoMeaning: e.target.value,
+                                personality: '',
+                                connectionType: '',
+                                instagramHandle: '',
+                                howHeardAboutUs: '',
+                                eventId: '',
+                                eventName: '',
+                                createdAt: '',
+                                updatedAt: ''
+                              }
                           })}
                           className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded mt-1"
                         />
@@ -886,7 +1064,25 @@ export const Admin: React.FC = () => {
                           checked={editingUser.surveyResponse?.personality === option.value}
                           onChange={(e) => setEditingUser({
                             ...editingUser, 
-                            surveyResponse: {...editingUser.surveyResponse, personality: e.target.value}
+                            surveyResponse: editingUser.surveyResponse ? 
+                              {...editingUser.surveyResponse, personality: e.target.value} :
+                              {
+                                id: '',
+                                userId: editingUser.id,
+                                fullName: editingUser.name || '',
+                                email: editingUser.email,
+                                age: '',
+                                gender: '',
+                                torontoMeaning: '',
+                                personality: e.target.value,
+                                connectionType: '',
+                                instagramHandle: '',
+                                howHeardAboutUs: '',
+                                eventId: '',
+                                eventName: '',
+                                createdAt: '',
+                                updatedAt: ''
+                              }
                           })}
                           className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded mt-1"
                         />
@@ -908,7 +1104,25 @@ export const Admin: React.FC = () => {
                           checked={editingUser.surveyResponse?.connectionType === option.value}
                           onChange={(e) => setEditingUser({
                             ...editingUser, 
-                            surveyResponse: {...editingUser.surveyResponse, connectionType: e.target.value}
+                            surveyResponse: editingUser.surveyResponse ? 
+                              {...editingUser.surveyResponse, connectionType: e.target.value} :
+                              {
+                                id: '',
+                                userId: editingUser.id,
+                                fullName: editingUser.name || '',
+                                email: editingUser.email,
+                                age: '',
+                                gender: '',
+                                torontoMeaning: '',
+                                personality: '',
+                                connectionType: e.target.value,
+                                instagramHandle: '',
+                                howHeardAboutUs: '',
+                                eventId: '',
+                                eventName: '',
+                                createdAt: '',
+                                updatedAt: ''
+                              }
                           })}
                           className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
                         />
@@ -930,7 +1144,142 @@ export const Admin: React.FC = () => {
                           checked={editingUser.surveyResponse?.howHeardAboutUs === option.value}
                           onChange={(e) => setEditingUser({
                             ...editingUser, 
-                            surveyResponse: {...editingUser.surveyResponse, howHeardAboutUs: e.target.value}
+                            surveyResponse: editingUser.surveyResponse ? 
+                              {...editingUser.surveyResponse, howHeardAboutUs: e.target.value} :
+                              {
+                                id: '',
+                                userId: editingUser.id,
+                                fullName: editingUser.name || '',
+                                email: editingUser.email,
+                                age: '',
+                                gender: '',
+                                torontoMeaning: '',
+                                personality: '',
+                                connectionType: '',
+                                instagramHandle: '',
+                                howHeardAboutUs: e.target.value,
+                                eventId: '',
+                                eventName: '',
+                                createdAt: '',
+                                updatedAt: ''
+                              }
+                          })}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                        />
+                        <span className="ml-3 text-white/80 text-sm">{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Survey Details Form for New Users */}
+            {!editingUser.id && (
+              <div className="mt-6 space-y-6">
+                <div className="border-b border-white/20 pb-2">
+                  <h4 className="text-lg font-medium text-white">Survey Details</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-white/80 text-sm mb-3">{SURVEY_LABELS.torontoMeaning}</label>
+                  <div className="space-y-2">
+                    {SURVEY_OPTIONS.torontoMeaning.map((option) => (
+                      <label key={option.value} className="flex items-start cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`torontoMeaning-new`}
+                          value={option.value}
+                          checked={editingUser.surveyResponse?.torontoMeaning === option.value}
+                          onChange={(e) => setEditingUser({
+                            ...editingUser, 
+                            surveyResponse: {
+                              ...editingUser.surveyResponse!,
+                              torontoMeaning: e.target.value,
+                              fullName: editingUser.name || '',
+                              email: editingUser.email
+                            }
+                          })}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded mt-1"
+                        />
+                        <span className="ml-3 text-white/80 text-sm">{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-white/80 text-sm mb-3">{SURVEY_LABELS.personality}</label>
+                  <div className="space-y-2">
+                    {SURVEY_OPTIONS.personality.map((option) => (
+                      <label key={option.value} className="flex items-start cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`personality-new`}
+                          value={option.value}
+                          checked={editingUser.surveyResponse?.personality === option.value}
+                          onChange={(e) => setEditingUser({
+                            ...editingUser, 
+                            surveyResponse: {
+                              ...editingUser.surveyResponse!,
+                              personality: e.target.value,
+                              fullName: editingUser.name || '',
+                              email: editingUser.email
+                            }
+                          })}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded mt-1"
+                        />
+                        <span className="ml-3 text-white/80 text-sm">{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-white/80 text-sm mb-3">{SURVEY_LABELS.connectionType}</label>
+                  <div className="space-y-2">
+                    {SURVEY_OPTIONS.connectionType.map((option) => (
+                      <label key={option.value} className="flex items-center cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`connectionType-new`}
+                          value={option.value}
+                          checked={editingUser.surveyResponse?.connectionType === option.value}
+                          onChange={(e) => setEditingUser({
+                            ...editingUser, 
+                            surveyResponse: {
+                              ...editingUser.surveyResponse!,
+                              connectionType: e.target.value,
+                              fullName: editingUser.name || '',
+                              email: editingUser.email
+                            }
+                          })}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                        />
+                        <span className="ml-3 text-white/80 text-sm">{option.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-white/80 text-sm mb-3">{SURVEY_LABELS.howHeardAboutUs}</label>
+                  <div className="space-y-2">
+                    {SURVEY_OPTIONS.howHeardAboutUs.map((option) => (
+                      <label key={option.value} className="flex items-center cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`howHeard-new`}
+                          value={option.value}
+                          checked={editingUser.surveyResponse?.howHeardAboutUs === option.value}
+                          onChange={(e) => setEditingUser({
+                            ...editingUser, 
+                            surveyResponse: {
+                              ...editingUser.surveyResponse!,
+                              howHeardAboutUs: e.target.value,
+                              fullName: editingUser.name || '',
+                              email: editingUser.email
+                            }
                           })}
                           className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
                         />
@@ -943,13 +1292,15 @@ export const Admin: React.FC = () => {
             )}
             
             {/* Cocktail Preferences */}
-            {editingUser.cocktailPreference && (
+            {editingUser.id && (
               <div className="mt-6 space-y-4">
                 <div className="flex items-center justify-between border-b border-white/20 pb-2">
                   <h4 className="text-lg font-medium text-white">Cocktail Preferences</h4>
-                  <span className="text-sm text-purple-300 bg-purple-600/20 px-2 py-1 rounded">
-                    Event: {editingUser.cocktailPreference.eventName || editingUser.cocktailPreference.eventId}
-                  </span>
+                  {editingUser.cocktailPreference && (
+                    <span className="text-sm text-purple-300 bg-purple-600/20 px-2 py-1 rounded">
+                      Event: {editingUser.cocktailPreference.eventName || editingUser.cocktailPreference.eventId}
+                    </span>
+                  )}
                 </div>
                 
                 <div>
@@ -964,7 +1315,55 @@ export const Admin: React.FC = () => {
                           checked={editingUser.cocktailPreference?.preference === option.value}
                           onChange={(e) => setEditingUser({
                             ...editingUser, 
-                            cocktailPreference: {...editingUser.cocktailPreference, preference: e.target.value}
+                            cocktailPreference: editingUser.cocktailPreference ? 
+                              {...editingUser.cocktailPreference, preference: e.target.value} :
+                              {
+                                id: '',
+                                userId: editingUser.id,
+                                preference: e.target.value,
+                                eventId: '',
+                                eventName: '',
+                                createdAt: '',
+                                updatedAt: ''
+                              }
+                          })}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                        />
+                        <span className="ml-3 text-white/80 text-sm flex items-center">
+                          <span className="mr-2">{option.emoji}</span>
+                          <span className="font-medium">{option.label}</span>
+                          <span className="ml-2 text-white/60 text-xs">— {option.description}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+            
+            {/* Cocktail Preferences Form for New Users */}
+            {!editingUser.id && (
+              <div className="mt-6 space-y-4">
+                <div className="border-b border-white/20 pb-2">
+                  <h4 className="text-lg font-medium text-white">Cocktail Preferences</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-white/80 text-sm mb-3">{COCKTAIL_LABELS.preference}</label>
+                  <div className="space-y-2">
+                    {COCKTAIL_OPTIONS.map((option) => (
+                      <label key={option.value} className="flex items-center cursor-pointer">
+                        <input
+                          type="radio"
+                          name={`cocktail-new`}
+                          value={option.value}
+                          checked={editingUser.cocktailPreference?.preference === option.value}
+                          onChange={(e) => setEditingUser({
+                            ...editingUser, 
+                            cocktailPreference: {
+                              ...editingUser.cocktailPreference!,
+                              preference: e.target.value
+                            }
                           })}
                           className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
                         />

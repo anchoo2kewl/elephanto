@@ -1,0 +1,6 @@
+2025/08/19 11:04:22 Database connection established successfully
+2025/08/19 11:04:22 Running auto-migrations...
+2025/08/19 11:04:22 No migrations to run
+2025/08/19 11:04:22 Server starting on port 8080
+2025/08/19 11:04:22 listen tcp :8080: bind: address already in use
+exit status 1

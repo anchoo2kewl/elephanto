@@ -54,6 +54,7 @@ func main() {
 		cfg.SMTPHost,
 		cfg.SMTPPort,
 		cfg.FrontendURL,
+		cfg.EmailServiceOverride,
 	)
 
 	authService := services.NewAuthService(database.DB, emailService, cfg.JWTSecret)
@@ -120,6 +121,8 @@ func main() {
 	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
 	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
+	admin.HandleFunc("/users/{id}/survey", adminHandler.UpdateUserSurvey).Methods("PUT")
+	admin.HandleFunc("/users/{id}/cocktail", adminHandler.UpdateUserCocktail).Methods("PUT")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
@@ -217,6 +220,7 @@ func serve() {
 		cfg.SMTPHost,
 		cfg.SMTPPort,
 		cfg.FrontendURL,
+		cfg.EmailServiceOverride,
 	)
 
 	authService := services.NewAuthService(database.DB, emailService, cfg.JWTSecret)
@@ -283,6 +287,8 @@ func serve() {
 	admin.HandleFunc("/users/{id}", adminHandler.UpdateUserFull).Methods("PUT")
 	admin.HandleFunc("/users/{id}/role", adminHandler.UpdateUserRole).Methods("PUT")
 	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
+	admin.HandleFunc("/users/{id}/survey", adminHandler.UpdateUserSurvey).Methods("PUT")
+	admin.HandleFunc("/users/{id}/cocktail", adminHandler.UpdateUserCocktail).Methods("PUT")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")

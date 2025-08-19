@@ -82,6 +82,12 @@ export const adminAPI = {
   
   getMigrationStatus: () => 
     api.get('/admin/migrations'),
+
+  updateUserSurvey: (userId: string, surveyData: any) =>
+    api.put(`/admin/users/${userId}/survey`, surveyData),
+
+  updateUserCocktail: (userId: string, cocktailData: any) =>
+    api.put(`/admin/users/${userId}/cocktail`, cocktailData),
 };
 
 export default api;
