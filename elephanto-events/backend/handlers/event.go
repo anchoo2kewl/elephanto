@@ -28,7 +28,7 @@ func (h *EventHandler) GetActiveEvent(w http.ResponseWriter, r *http.Request) {
 	err := h.db.QueryRow(`
 		SELECT id, title, tagline, date, time, entry_time, location, address, attire, age_range, 
 		       description, is_active, ticket_url, google_maps_enabled, countdown_enabled, 
-		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date,
+		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date, the_hour_link,
 		       created_at, updated_at, created_by
 		FROM events 
 		WHERE is_active = true
@@ -37,7 +37,7 @@ func (h *EventHandler) GetActiveEvent(w http.ResponseWriter, r *http.Request) {
 		&event.Location, &event.Address, &event.Attire, &event.AgeRange, &event.Description,
 		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.CountdownEnabled,
 		&event.CocktailSelectionEnabled, &event.SurveyEnabled, &event.TheHourEnabled,
-		&event.TheHourActiveDate, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
+		&event.TheHourActiveDate, &event.TheHourLink, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
 	)
 
 	if err != nil {
@@ -125,7 +125,7 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	err = h.db.QueryRow(`
 		SELECT id, title, tagline, date, time, entry_time, location, address, attire, age_range, 
 		       description, is_active, ticket_url, google_maps_enabled, countdown_enabled, 
-		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date,
+		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date, the_hour_link,
 		       created_at, updated_at, created_by
 		FROM events 
 		WHERE id = $1
@@ -134,7 +134,7 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 		&event.Location, &event.Address, &event.Attire, &event.AgeRange, &event.Description,
 		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.CountdownEnabled,
 		&event.CocktailSelectionEnabled, &event.SurveyEnabled, &event.TheHourEnabled,
-		&event.TheHourActiveDate, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
+		&event.TheHourActiveDate, &event.TheHourLink, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
 	)
 
 	if err != nil {

@@ -252,8 +252,8 @@ export const Admin: React.FC = () => {
       
       // Remove undefined values to avoid sending them
       Object.keys(eventData).forEach(key => {
-        if (eventData[key] === undefined) {
-          delete eventData[key];
+        if ((eventData as any)[key] === undefined) {
+          delete (eventData as any)[key];
         }
       });
       
@@ -277,7 +277,7 @@ export const Admin: React.FC = () => {
       
       // Auto-hide notification after 3 seconds
       setTimeout(() => setNotification(null), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save event:', error);
       
       // More detailed error logging
