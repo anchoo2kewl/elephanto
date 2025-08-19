@@ -32,7 +32,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: User },
-    { path: '/settings', label: 'My Profile', icon: Settings },
+    { path: '/settings', label: 'Profile', icon: Settings },
     ...(user.role === 'admin' ? [{ path: '/admin', label: 'Admin', icon: Shield }] : []),
   ];
 
@@ -109,9 +109,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
             <div className="hidden md:flex lg:flex xl:flex items-center justify-between">
               <div className="flex items-center space-x-6">
                 <VelvetHourLogo size="medium" />
-                <h1 className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                  Velvet Hour
-                </h1>
                 <nav className="flex space-x-6">
                   {navItems.map(({ path, label, icon: Icon }) => (
                     <Link
@@ -131,9 +128,6 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
               </div>
               
               <div className="flex items-center space-x-4">
-                <div className="text-gray-700 dark:text-gray-300 text-sm mr-2">
-                  Welcome, {user.name || user.email}
-                </div>
                 <ThemeToggle />
                 <button
                   onClick={handleLogout}

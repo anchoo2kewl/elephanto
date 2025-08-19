@@ -74,3 +74,98 @@
     transform: rotate(360deg);
   }
 }
+
+/* Event details content styling */
+.event-detail-content {
+  line-height: 1.8;
+}
+
+.event-detail-content p {
+  margin-bottom: 1.5rem;
+  font-size: 1.1rem;
+}
+
+/* Professional event details grid */
+.event-detail-content .event-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2rem;
+  margin: 2rem 0;
+}
+
+.event-detail-content .event-info-item {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 1.5rem;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.event-detail-content .event-info-item:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.event-detail-content .event-info-label {
+  font-weight: 700;
+  font-size: 1rem;
+  color: #f59e0b;
+  margin-bottom: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.event-detail-content .event-info-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: #ffffff;
+  line-height: 1.4;
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .event-detail-content .event-info-value {
+    color: #ffffff;
+  }
+}
+
+/* Better spacing for emoji/icon content */
+.event-detail-content p {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
+
+.event-detail-content p strong {
+  display: flex;
+  align-items: center;
+  min-width: 120px;
+  margin-right: 1rem;
+  font-weight: 700;
+  color: #f59e0b;
+  font-size: 1rem;
+}
+
+/* Fix emoji spacing issues */
+.event-detail-content {
+  white-space: normal;
+}
+
+/* Better formatting for event detail items */
+.event-detail-content p:has(strong) {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.event-detail-content p:has(strong):hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.15);
+}

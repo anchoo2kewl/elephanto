@@ -6,6 +6,7 @@ import (
 	"elephanto-events/models"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -173,28 +174,37 @@ func (h *AdminHandler) UpdateUserAttendance(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
+	log.Printf("UpdateUserRole: Starting request")
+	
 	vars := mux.Vars(r)
 	userID := vars["id"]
+	log.Printf("UpdateUserRole: User ID: %s", userID)
 
 	parsedUserID, err := uuid.Parse(userID)
 	if err != nil {
+		log.Printf("UpdateUserRole: Invalid user ID: %v", err)
 		http.Error(w, "Invalid user ID", http.StatusBadRequest)
 		return
 	}
 
 	admin, ok := middleware.GetUserFromContext(r)
 	if !ok {
+		log.Printf("UpdateUserRole: Admin not found in context")
 		http.Error(w, "Admin not found", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("UpdateUserRole: Admin ID: %v", admin.ID)
 
 	var req models.UpdateRoleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		log.Printf("UpdateUserRole: Failed to decode request body: %v", err)
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	log.Printf("UpdateUserRole: Requested role: %s", req.Role)
 
 	if req.Role != "user" && req.Role != "admin" {
+		log.Printf("UpdateUserRole: Invalid role requested: %s", req.Role)
 		http.Error(w, "Invalid role. Must be 'user' or 'admin'", http.StatusBadRequest)
 		return
 	}
@@ -222,30 +232,40 @@ func (h *AdminHandler) UpdateUserRole(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback()
 
-	_, err = tx.Exec("UPDATE users SET role = $1, updatedAt = CURRENT_TIMESTAMP WHERE id = $2", req.Role, parsedUserID)
+	_, err = tx.Exec("UPDATE users SET role = $1, updatedat = CURRENT_TIMESTAMP WHERE id = $2", req.Role, parsedUserID)
 	if err != nil {
+		log.Printf("UpdateUserRole: Failed to update user role: %v", err)
 		http.Error(w, "Failed to update user role", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("UpdateUserRole: Successfully updated role from %s to %s", oldRole, req.Role)
 
+	log.Printf("UpdateUserRole: Inserting audit log")
+	oldValueJSON := fmt.Sprintf(`"%s"`, oldRole)  // Wrap in quotes for JSON string
+	newValueJSON := fmt.Sprintf(`"%s"`, req.Role) // Wrap in quotes for JSON string
 	_, err = tx.Exec(`
-		INSERT INTO adminAuditLogs (adminId, targetUserId, action, oldValue, newValue, ipAddress)
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
 		VALUES ($1, $2, 'role_update', $3, $4, $5)
-	`, admin.ID, parsedUserID, oldRole, req.Role, getClientIP(r))
+	`, admin.ID, parsedUserID, oldValueJSON, newValueJSON, getClientIP(r))
 	if err != nil {
+		log.Printf("UpdateUserRole: Failed to insert audit log: %v", err)
 		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("UpdateUserRole: Audit log inserted successfully")
 
 	if err := tx.Commit(); err != nil {
+		log.Printf("UpdateUserRole: Failed to commit transaction: %v", err)
 		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("UpdateUserRole: Transaction committed successfully")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "User role updated successfully",
 	})
+	log.Printf("UpdateUserRole: Response sent successfully")
 }
 
 func (h *AdminHandler) GetMigrationStatus(w http.ResponseWriter, r *http.Request) {

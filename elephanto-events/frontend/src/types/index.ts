@@ -8,6 +8,10 @@ export interface User {
   isOnboarded: boolean;
   createdAt: string;
   updatedAt: string;
+  attending?: boolean;
+  hasActiveEvent?: boolean;
+  hasSurvey?: boolean;
+  hasCocktail?: boolean;
 }
 
 export interface LoginRequest {
@@ -16,8 +20,6 @@ export interface LoginRequest {
 
 export interface UpdateProfileRequest {
   name?: string;
-  dateOfBirth?: string;
-  currentCity?: string;
 }
 
 export interface UpdateRoleRequest {

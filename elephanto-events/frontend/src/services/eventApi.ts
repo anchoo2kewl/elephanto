@@ -95,6 +95,27 @@ export const eventApi = {
     return response;
   },
 
+  // Get user's attendance status for the active event
+  getUserAttendance: async (): Promise<{ data: { attending: boolean; message: string } }> => {
+    const apiUrl = getAPIURL();
+    const response = await axios.get(`${apiUrl}/api/events/attendance`, {
+      headers: createAuthHeaders(),
+    });
+    return response;
+  },
+
+  // Update user's attendance status for the active event
+  updateUserAttendance: async (attending: boolean): Promise<{ data: { attending: boolean; message: string } }> => {
+    const apiUrl = getAPIURL();
+    const response = await axios.post(`${apiUrl}/api/events/attendance`, 
+      { attending }, 
+      {
+        headers: createAuthHeaders(),
+      }
+    );
+    return response;
+  },
+
   // Admin endpoints (require admin role)
   admin: {
     // Get all events

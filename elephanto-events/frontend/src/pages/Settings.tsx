@@ -2,30 +2,33 @@ import React, { useState } from 'react';
 import { GlassCard } from '@/components/GlassCard';
 import { useAuth } from '@/contexts/AuthContext';
 import { userAPI } from '@/services/api';
-import { User, MapPin, Calendar, Mail, Save } from 'lucide-react';
+import { User, Mail, Save } from 'lucide-react';
 
 export const Settings: React.FC = () => {
   const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: user?.name || '',
-    dateOfBirth: user?.dateOfBirth?.split('T')[0] || '',
-    currentCity: user?.currentCity || '',
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setSuccess(false);
+    setError(null);
 
     try {
       const response = await userAPI.updateProfile(formData);
       updateUser(response.data);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Profile update failed:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to update profile';
+      setError(errorMessage);
+      setTimeout(() => setError(null), 5000);
     } finally {
       setLoading(false);
     }
@@ -95,44 +98,16 @@ export const Settings: React.FC = () => {
                 </div>
               </div>
 
-              <div>
-                <label htmlFor="dateOfBirth" className="block text-white/90 mb-2">
-                  Date of Birth
-                </label>
-                <div className="relative">
-                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-white/60" />
-                  <input
-                    type="date"
-                    id="dateOfBirth"
-                    name="dateOfBirth"
-                    value={formData.dateOfBirth}
-                    onChange={handleChange}
-                    className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all duration-200"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="currentCity" className="block text-white/90 mb-2">
-                  Current City
-                </label>
-                <div className="relative">
-                  <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-white/60" />
-                  <input
-                    type="text"
-                    id="currentCity"
-                    name="currentCity"
-                    value={formData.currentCity}
-                    onChange={handleChange}
-                    placeholder="Enter your city"
-                    className="w-full pl-10 pr-4 py-3 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-white/30 focus:border-transparent transition-all duration-200"
-                  />
-                </div>
-              </div>
 
               {success && (
                 <div className="p-3 bg-green-500/20 border border-green-500/30 rounded-lg text-green-200 text-sm">
                   Profile updated successfully! ✅
+                </div>
+              )}
+
+              {error && (
+                <div className="p-3 bg-red-500/20 border border-red-500/30 rounded-lg text-red-200 text-sm">
+                  ❌ {error}
                 </div>
               )}
 

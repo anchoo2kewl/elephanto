@@ -68,6 +68,8 @@ export const Admin: React.FC = () => {
   const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events'>('overview');
+  const [eventModalTab, setEventModalTab] = useState<'basic' | 'details'>('basic');
+  const [eventDetails, setEventDetails] = useState<any[]>([]);
   const [notification, setNotification] = useState<{
     message: string;
     type: 'success' | 'error';
@@ -85,6 +87,16 @@ export const Admin: React.FC = () => {
     loadData();
   }, []);
 
+  // 🔧 Notification helper
+  const showNotification = (
+    message: string,
+    type: 'success' | 'error' = 'success',
+    timeout: number = type === 'success' ? 3000 : 5000
+  ) => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), timeout);
+  };
+
   const loadData = async () => {
     try {
       const [usersResponse, migrationResponse, eventsResponse] = await Promise.all([
@@ -92,11 +104,14 @@ export const Admin: React.FC = () => {
         adminAPI.getMigrationStatus(),
         eventApi.admin.getAllEvents(),
       ]);
+      console.log('Users response:', usersResponse.data);
+      console.log('First user:', usersResponse.data[0]);
       setUsers(usersResponse.data);
       setMigrationStatus(migrationResponse.data);
       setEvents(eventsResponse.data);
     } catch (error) {
       console.error('Failed to load admin data:', error);
+      showNotification('Failed to load admin data', 'error');
     } finally {
       setLoading(false);
     }
@@ -109,8 +124,10 @@ export const Admin: React.FC = () => {
         user.id === userId ? { ...user, role: newRole } : user
       ));
       setSelectedUser('');
+      showNotification('User role updated successfully!', 'success');
     } catch (error) {
       console.error('Failed to update user role:', error);
+      showNotification('Failed to update user role', 'error');
     }
   };
 
@@ -119,7 +136,6 @@ export const Admin: React.FC = () => {
       const response = await adminAPI.getUserWithDetails(userId);
       const userWithDetails: UserWithDetails = response.data;
       
-      // Transform the backend response to match our UserDetails interface
       const userDetails: UserDetails = {
         id: userWithDetails.user.id,
         email: userWithDetails.user.email,
@@ -134,6 +150,7 @@ export const Admin: React.FC = () => {
       setEditingUser(userDetails);
     } catch (error) {
       console.error('Failed to load user details:', error);
+      showNotification('Failed to load user details', 'error');
     }
   };
 
@@ -142,19 +159,13 @@ export const Admin: React.FC = () => {
     
     try {
       if (editingUser.id) {
-        // Update basic user info
         const updateData = {
           name: editingUser.name,
           role: editingUser.role,
           isOnboarded: editingUser.isOnboarded
         };
         await adminAPI.updateUserFull(editingUser.id, updateData);
-        
-        // Note: Survey and cocktail updates would need separate endpoints
-        // For now, we're only updating basic user information
-        // TODO: Add survey response and cocktail preference update endpoints
       } else {
-        // Create new user (basic info only)
         const createData = {
           email: editingUser.email,
           name: editingUser.name,
@@ -163,19 +174,23 @@ export const Admin: React.FC = () => {
         };
         await adminAPI.createUser(createData);
       }
-      await loadData(); // Refresh data
+      await loadData();
       setEditingUser(null);
+      showNotification('User saved successfully!', 'success');
     } catch (error) {
       console.error('Failed to save user:', error);
+      showNotification('Failed to save user', 'error');
     }
   };
 
   const handleActivateEvent = async (eventId: string) => {
     try {
       await eventApi.admin.activateEvent(eventId);
-      await loadData(); // Refresh events
+      await loadData();
+      showNotification('Event activated successfully!', 'success');
     } catch (error) {
       console.error('Failed to activate event:', error);
+      showNotification('Failed to activate event', 'error');
     }
   };
 
@@ -183,9 +198,12 @@ export const Admin: React.FC = () => {
     try {
       const response = await eventApi.admin.getEvent(eventId);
       setSelectedEvent(response.data.event);
+      setEventDetails(response.data.details || []);
+      setEventModalTab('basic');
       setIsEventModalOpen(true);
     } catch (error) {
       console.error('Failed to load event details:', error);
+      showNotification('Failed to load event details', 'error');
     }
   };
 
@@ -212,21 +230,17 @@ export const Admin: React.FC = () => {
       theHourActiveDate: '',
       theHourLink: ''
     });
+    setEventDetails([]);
+    setEventModalTab('basic');
     setIsEventModalOpen(true);
   };
 
   const handleSaveEvent = async () => {
-    if (!selectedEvent) {
-      console.log('No selected event');
-      return;
-    }
+    if (!selectedEvent) return;
     
     setSavingEvent(true);
-    console.log('Saving event:', selectedEvent);
-    
     try {
-      // Format the event data for the backend UpdateEventRequest structure
-      const eventData = {
+      const eventData: any = {
         title: selectedEvent.title || undefined,
         tagline: selectedEvent.tagline || undefined,
         date: selectedEvent.date ? selectedEvent.date.split('T')[0] : undefined,
@@ -243,58 +257,90 @@ export const Admin: React.FC = () => {
         cocktailSelectionEnabled: selectedEvent.cocktailSelectionEnabled,
         surveyEnabled: selectedEvent.surveyEnabled,
         theHourEnabled: selectedEvent.theHourEnabled,
-        // TheHourActiveDate should be null if not set, not empty string
         theHourActiveDate: selectedEvent.theHourActiveDate && selectedEvent.theHourActiveDate !== '' 
           ? new Date(selectedEvent.theHourActiveDate).toISOString() 
           : undefined,
         theHourLink: selectedEvent.theHourLink || undefined
       };
       
-      // Remove undefined values to avoid sending them
       Object.keys(eventData).forEach(key => {
-        if ((eventData as any)[key] === undefined) {
-          delete (eventData as any)[key];
+        if (eventData[key] === undefined) {
+          delete eventData[key];
         }
       });
       
-      console.log('Formatted event data:', eventData);
-      
-      let result;
       if (selectedEvent.id) {
-        console.log('Updating event with ID:', selectedEvent.id);
-        result = await eventApi.admin.updateEvent(selectedEvent.id, eventData);
-        setNotification({ message: 'Event updated successfully!', type: 'success' });
+        await eventApi.admin.updateEvent(selectedEvent.id, eventData);
+        showNotification('Event updated successfully!', 'success');
       } else {
-        console.log('Creating new event');
-        result = await eventApi.admin.createEvent(eventData);
-        setNotification({ message: 'Event created successfully!', type: 'success' });
+        await eventApi.admin.createEvent(eventData);
+        showNotification('Event created successfully!', 'success');
       }
-      console.log('Save result:', result);
       
       await loadData();
       setIsEventModalOpen(false);
       setSelectedEvent(null);
-      
-      // Auto-hide notification after 3 seconds
-      setTimeout(() => setNotification(null), 3000);
     } catch (error: any) {
       console.error('Failed to save event:', error);
-      
-      // More detailed error logging
-      if (error.response) {
-        console.error('Error response:', error.response.data);
-        console.error('Error status:', error.response.status);
-      }
-      
       const errorMessage = error.response?.data?.message || error.message || 'Failed to save event. Please try again.';
-      setNotification({ 
-        message: errorMessage, 
-        type: 'error' 
-      });
-      // Auto-hide error notification after 5 seconds
-      setTimeout(() => setNotification(null), 5000);
+      showNotification(errorMessage, 'error');
     } finally {
       setSavingEvent(false);
+    }
+  };
+
+  const handleSaveEventDetail = async (detailIndex: number) => {
+    if (!selectedEvent?.id) return;
+    
+    const detail = eventDetails[detailIndex];
+    try {
+      if (detail.id) {
+        await eventApi.admin.updateEventDetail(selectedEvent.id, detail.id, detail);
+      } else {
+        const response = await eventApi.admin.createEventDetail(selectedEvent.id, detail);
+        const updated = [...eventDetails];
+        updated[detailIndex] = { ...detail, id: response.data.id };
+        setEventDetails(updated);
+      }
+      showNotification('Event detail saved successfully!', 'success');
+    } catch (error) {
+      console.error('Failed to save event detail:', error);
+      showNotification('Failed to save event detail', 'error');
+    }
+  };
+
+  const handleDeleteEventDetail = async (detailIndex: number) => {
+    if (!selectedEvent?.id) return;
+    
+    const detail = eventDetails[detailIndex];
+    try {
+      if (detail.id) {
+        await eventApi.admin.deleteEventDetail(selectedEvent.id, detail.id);
+      }
+      setEventDetails(eventDetails.filter((_, i) => i !== detailIndex));
+      showNotification('Event detail deleted successfully!', 'success');
+    } catch (error) {
+      console.error('Failed to delete event detail:', error);
+      showNotification('Failed to delete event detail', 'error');
+    }
+  };
+
+  const handleAttendanceUpdate = async (userId: string, attending: boolean) => {
+    try {
+      await adminAPI.updateUserAttendance(userId, attending);
+      
+      // Update the user in the local state
+      setUsers(users.map(user => 
+        user.id === userId ? { ...user, attending } : user
+      ));
+      
+      showNotification(
+        `User marked as ${attending ? 'attending' : 'not attending'}`, 
+        'success'
+      );
+    } catch (error) {
+      console.error('Failed to update user attendance:', error);
+      showNotification('Failed to update attendance', 'error');
     }
   };
 
@@ -437,6 +483,7 @@ export const Admin: React.FC = () => {
                   <th className="text-left text-white/80 py-3 px-2">Status</th>
                   <th className="text-left text-white/80 py-3 px-2">Survey</th>
                   <th className="text-left text-white/80 py-3 px-2">Cocktail</th>
+                  <th className="text-left text-white/80 py-3 px-2">Attendance</th>
                   <th className="text-left text-white/80 py-3 px-2">Joined</th>
                   <th className="text-left text-white/80 py-3 px-2">Actions</th>
                 </tr>
@@ -463,18 +510,55 @@ export const Admin: React.FC = () => {
                     </td>
                     <td className="py-4 px-2">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        user.isOnboarded
+                        user.hasSurvey && user.hasCocktail
                           ? 'bg-green-500/20 text-green-200'
-                          : 'bg-yellow-500/20 text-yellow-200'
+                          : user.hasSurvey || user.hasCocktail
+                          ? 'bg-yellow-500/20 text-yellow-200'
+                          : 'bg-red-500/20 text-red-200'
                       }`}>
-                        {user.isOnboarded ? '✅ Complete' : '⏳ Pending'}
+                        {user.hasSurvey && user.hasCocktail 
+                          ? '✅ Complete' 
+                          : user.hasSurvey || user.hasCocktail
+                          ? '🟡 Partial'
+                          : '❌ Incomplete'}
                       </span>
                     </td>
                     <td className="py-4 px-2 text-center">
-                      <FileText className="h-4 w-4 text-gray-400 mx-auto" />
+                      <div 
+                        className="flex justify-center"
+                        title={user.hasSurvey ? 'Survey completed' : 'Survey not completed'}
+                      >
+                        <FileText 
+                          className={`h-4 w-4 ${
+                            user.hasSurvey ? 'text-green-400' : 'text-gray-400'
+                          }`}
+                        />
+                      </div>
                     </td>
                     <td className="py-4 px-2 text-center">
-                      <Wine className="h-4 w-4 text-gray-400 mx-auto" />
+                      <div 
+                        className="flex justify-center"
+                        title={user.hasCocktail ? 'Cocktail preference set' : 'No cocktail preference'}
+                      >
+                        <Wine 
+                          className={`h-4 w-4 ${
+                            user.hasCocktail ? 'text-green-400' : 'text-gray-400'
+                          }`}
+                        />
+                      </div>
+                    </td>
+                    <td className="py-4 px-2 text-center">
+                      {user.hasActiveEvent ? (
+                        <input
+                          type="checkbox"
+                          checked={user.attending || false}
+                          onChange={(e) => handleAttendanceUpdate(user.id, e.target.checked)}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded focus:ring-blue-500 focus:ring-2"
+                          title={user.attending ? 'User is attending' : 'User is not attending'}
+                        />
+                      ) : (
+                        <span className="text-gray-500 text-xs">No active event</span>
+                      )}
                     </td>
                     <td className="py-4 px-2 text-white/70 text-sm">
                       {new Date(user.createdAt).toLocaleDateString()}
@@ -934,222 +1018,374 @@ export const Admin: React.FC = () => {
               </button>
             </div>
             
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Basic Information */}
-              <div className="space-y-4">
-                <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2">Basic Information</h4>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Event Title</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.title}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, title: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Event Title"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Tagline</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.tagline || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, tagline: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Event Tagline"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Date</label>
-                  <input
-                    type="date"
-                    value={selectedEvent.date ? selectedEvent.date.split('T')[0] : ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, date: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Time</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.time}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, time: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="6:30 - 9:30 PM"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Entry Time</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.entryTime || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, entryTime: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Entry until 7:15 PM"
-                  />
-                </div>
-              </div>
-              
-              {/* Location & Details */}
-              <div className="space-y-4">
-                <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2">Location & Details</h4>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Location</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.location}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, location: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Venue Name"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Address</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.address || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, address: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Full Address"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Attire</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.attire || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, attire: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="Smart Casual"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Age Range</label>
-                  <input
-                    type="text"
-                    value={selectedEvent.ageRange || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, ageRange: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="25 - 40"
-                  />
-                </div>
-                
-                <div>
-                  <label className="block text-white/80 text-sm mb-2">Ticket URL</label>
-                  <input
-                    type="url"
-                    value={selectedEvent.ticketUrl || ''}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, ticketUrl: e.target.value})}
-                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                    placeholder="https://eventbrite.com/..."
-                  />
-                </div>
-              </div>
+            {/* Tab Navigation */}
+            <div className="flex space-x-1 mb-6 bg-white/5 rounded-lg p-1">
+              <button
+                onClick={() => setEventModalTab('basic')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
+                  eventModalTab === 'basic'
+                    ? 'bg-blue-600/30 text-blue-200 border border-blue-400/50'
+                    : 'text-white/80 hover:bg-white/10'
+                }`}
+              >
+                Basic Information
+              </button>
+              <button
+                onClick={() => setEventModalTab('details')}
+                className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-all duration-200 ${
+                  eventModalTab === 'details'
+                    ? 'bg-blue-600/30 text-blue-200 border border-blue-400/50'
+                    : 'text-white/80 hover:bg-white/10'
+                }`}
+              >
+                Event Details
+              </button>
             </div>
             
-            {/* Description */}
-            <div className="mt-6">
-              <label className="block text-white/80 text-sm mb-2">Description</label>
-              <textarea
-                value={selectedEvent.description || ''}
-                onChange={(e) => setSelectedEvent({...selectedEvent, description: e.target.value})}
-                rows={4}
-                className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                placeholder="Event description..."
-              />
-            </div>
-            
-            {/* Feature Toggles */}
-            <div className="mt-6">
-              <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2 mb-4">Feature Settings</h4>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="isActive"
-                    checked={selectedEvent.isActive}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, isActive: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                  />
-                  <label htmlFor="isActive" className="text-white/80 text-sm">Active Event</label>
+            {/* Basic Information Tab */}
+            {eventModalTab === 'basic' && (
+              <div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Basic Information */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2">Basic Information</h4>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Event Title</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.title}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, title: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Event Title"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Tagline</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.tagline || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, tagline: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Event Tagline"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Date</label>
+                      <input
+                        type="date"
+                        value={selectedEvent.date ? selectedEvent.date.split('T')[0] : ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, date: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Time</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.time}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, time: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="6:30 - 9:30 PM"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Entry Time</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.entryTime || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, entryTime: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Entry until 7:15 PM"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Location & Details */}
+                  <div className="space-y-4">
+                    <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2">Location & Details</h4>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Location</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.location}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, location: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Venue Name"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Address</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.address || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, address: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Full Address"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Attire</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.attire || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, attire: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Smart Casual"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Age Range</label>
+                      <input
+                        type="text"
+                        value={selectedEvent.ageRange || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, ageRange: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="25 - 40"
+                      />
+                    </div>
+                    
+                    <div>
+                      <label className="block text-white/80 text-sm mb-2">Ticket URL</label>
+                      <input
+                        type="url"
+                        value={selectedEvent.ticketUrl || ''}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, ticketUrl: e.target.value})}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="https://eventbrite.com/..."
+                      />
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="countdownEnabled"
-                    checked={selectedEvent.countdownEnabled}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, countdownEnabled: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+
+                {/* ✅ Description (now inside wrapper) */}
+                <div className="mt-6">
+                  <label className="block text-white/80 text-sm mb-2">Description</label>
+                  <textarea
+                    value={selectedEvent.description || ''}
+                    onChange={(e) => setSelectedEvent({ ...selectedEvent, description: e.target.value })}
+                    rows={4}
+                    className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                    placeholder="Event description..."
                   />
-                  <label htmlFor="countdownEnabled" className="text-white/80 text-sm">Show Countdown</label>
                 </div>
-                
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="cocktailSelectionEnabled"
-                    checked={selectedEvent.cocktailSelectionEnabled}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, cocktailSelectionEnabled: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                  />
-                  <label htmlFor="cocktailSelectionEnabled" className="text-white/80 text-sm">Cocktail Selection</label>
+
+                {/* ✅ Feature Toggles (inside wrapper) */}
+                <div className="mt-6">
+                  <h4 className="text-lg font-medium text-white border-b border-white/20 pb-2 mb-4">Feature Settings</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="isActive"
+                        checked={selectedEvent.isActive}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, isActive: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="isActive" className="text-white/80 text-sm">Active Event</label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="countdownEnabled"
+                        checked={selectedEvent.countdownEnabled}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, countdownEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="countdownEnabled" className="text-white/80 text-sm">Show Countdown</label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="cocktailSelectionEnabled"
+                        checked={selectedEvent.cocktailSelectionEnabled}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, cocktailSelectionEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="cocktailSelectionEnabled" className="text-white/80 text-sm">Cocktail Selection</label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="surveyEnabled"
+                        checked={selectedEvent.surveyEnabled}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, surveyEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="surveyEnabled" className="text-white/80 text-sm">Survey Enabled</label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="googleMapsEnabled"
+                        checked={selectedEvent.googleMapsEnabled}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, googleMapsEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="googleMapsEnabled" className="text-white/80 text-sm">Google Maps</label>
+                    </div>
+                    
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        id="theHourEnabled"
+                        checked={selectedEvent.theHourEnabled}
+                        onChange={(e) => setSelectedEvent({...selectedEvent, theHourEnabled: e.target.checked})}
+                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                      />
+                      <label htmlFor="theHourEnabled" className="text-white/80 text-sm">The Hour Feature</label>
+                    </div>
+                  </div>
                 </div>
-                
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="surveyEnabled"
-                    checked={selectedEvent.surveyEnabled}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, surveyEnabled: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                  />
-                  <label htmlFor="surveyEnabled" className="text-white/80 text-sm">Survey Enabled</label>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="googleMapsEnabled"
-                    checked={selectedEvent.googleMapsEnabled}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, googleMapsEnabled: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                  />
-                  <label htmlFor="googleMapsEnabled" className="text-white/80 text-sm">Google Maps</label>
-                </div>
-                
-                <div className="flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="theHourEnabled"
-                    checked={selectedEvent.theHourEnabled}
-                    onChange={(e) => setSelectedEvent({...selectedEvent, theHourEnabled: e.target.checked})}
-                    className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                  />
-                  <label htmlFor="theHourEnabled" className="text-white/80 text-sm">The Hour Feature</label>
-                </div>
+
+                {/* ✅ The Hour Link (inside wrapper) */}
+                {selectedEvent.theHourEnabled && (
+                  <div className="mt-4">
+                    <label className="block text-white/80 text-sm mb-2">The Hour Link (optional)</label>
+                    <input
+                      type="url"
+                      value={selectedEvent.theHourLink || ''}
+                      onChange={(e) => setSelectedEvent({ ...selectedEvent, theHourLink: e.target.value })}
+                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                      placeholder="https://your-hour-link.com (leave blank for 'Coming Soon')"
+                    />
+                  </div>
+                )}
               </div>
-            </div>
+            )}
             
-            {/* The Hour Link */}
-            {selectedEvent.theHourEnabled && (
-              <div className="mt-4">
-                <label className="block text-white/80 text-sm mb-2">The Hour Link (optional)</label>
-                <input
-                  type="url"
-                  value={selectedEvent.theHourLink || ''}
-                  onChange={(e) => setSelectedEvent({...selectedEvent, theHourLink: e.target.value})}
-                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                  placeholder="https://your-hour-link.com (leave blank for 'Coming Soon')"
-                />
+            {/* Event Details Tab */}
+            {eventModalTab === 'details' && (
+              <div className="space-y-6">
+                <div className="flex justify-between items-center">
+                  <h4 className="text-lg font-medium text-white">Event Details Sections</h4>
+                  <button
+                    onClick={() => {
+                      const newDetail = {
+                        id: '',
+                        title: '',
+                        sectionType: 'general',
+                        content: '',
+                        displayOrder: eventDetails.length
+                      };
+                      setEventDetails([...eventDetails, newDetail]);
+                    }}
+                    className="flex items-center space-x-2 px-3 py-1 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Section</span>
+                  </button>
+                </div>
+                
+                {eventDetails.length === 0 && (
+                  <div className="text-center py-8 text-white/60">
+                    <p>No event details sections yet. Add a section to get started.</p>
+                  </div>
+                )}
+                
+                {eventDetails.map((detail, index) => (
+                  <div key={index} className="bg-white/5 rounded-lg p-4 border border-white/10">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div>
+                        <label className="block text-white/80 text-sm mb-2">Section Title</label>
+                        <input
+                          type="text"
+                          value={detail.title}
+                          onChange={(e) => {
+                            const updated = [...eventDetails];
+                            updated[index] = { ...detail, title: e.target.value };
+                            setEventDetails(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                          placeholder="Section Title"
+                        />
+                      </div>
+                      
+                      <div>
+                        <label className="block text-white/80 text-sm mb-2">Section Type</label>
+                        <select
+                          value={detail.sectionType}
+                          onChange={(e) => {
+                            const updated = [...eventDetails];
+                            updated[index] = { ...detail, sectionType: e.target.value };
+                            setEventDetails(updated);
+                          }}
+                          className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white"
+                        >
+                          <option value="general">General</option>
+                          <option value="who_we_curate">Who We're Curating</option>
+                          <option value="about_event">About the Event</option>
+                          <option value="about_org">About the Organization</option>
+                          <option value="location">Location</option>
+                          <option value="contact">Contact</option>
+                        </select>
+                      </div>
+                    </div>
+                    
+                    <div className="mb-4">
+                      <label className="block text-white/80 text-sm mb-2">Content (HTML supported)</label>
+                      <textarea
+                        value={detail.content}
+                        onChange={(e) => {
+                          const updated = [...eventDetails];
+                          updated[index] = { ...detail, content: e.target.value };
+                          setEventDetails(updated);
+                        }}
+                        rows={6}
+                        className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
+                        placeholder="Section content... HTML tags are supported for formatting."
+                      />
+                    </div>
+                    
+                    <div className="flex justify-between items-center">
+                      <div className="flex items-center space-x-4">
+                        <div>
+                          <label className="block text-white/80 text-xs mb-1">Display Order</label>
+                          <input
+                            type="number"
+                            value={detail.displayOrder}
+                            onChange={(e) => {
+                              const updated = [...eventDetails];
+                              updated[index] = { ...detail, displayOrder: parseInt(e.target.value) || 0 };
+                              setEventDetails(updated);
+                            }}
+                            className="w-20 px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleSaveEventDetail(index)}
+                          className="flex items-center space-x-1 px-3 py-1 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded transition-all duration-200"
+                        >
+                          <Save className="h-3 w-3" />
+                          <span className="text-sm">Save</span>
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEventDetail(index)}
+                          className="flex items-center space-x-1 px-3 py-1 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded transition-all duration-200"
+                        >
+                          <X className="h-3 w-3" />
+                          <span className="text-sm">Delete</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
             

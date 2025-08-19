@@ -79,18 +79,12 @@ export const Login: React.FC = () => {
           <div className="relative mb-2 flex justify-center">
             <VelvetHourLogo size="large" />
           </div>
-          <h1 className="text-4xl font-bold text-black mb-2 drop-shadow-lg" style={{color: '#000000', textShadow: '2px 2px 4px rgba(255,255,255,0.8)'}}>
-            Velvet Hour
-          </h1>
-          <p className="text-black font-semibold text-lg" style={{color: '#000000', textShadow: '1px 1px 2px rgba(255,255,255,0.6)'}}>
-            An exclusive evening of networking and connection
-          </p>
         </div>
 
         <GlassCard variant="elevated" className="p-8">
           <div className="text-center mb-6">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-              Welcome Back
+              Welcome
             </h2>
             <p className="text-gray-900 dark:text-gray-100 font-medium">
               Enter your email to login securely

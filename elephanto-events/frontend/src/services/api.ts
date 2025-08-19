@@ -63,7 +63,7 @@ export const userAPI = {
 
 export const adminAPI = {
   getUsers: () => 
-    api.get<User[]>('/admin/users'),
+    api.get<any[]>('/admin/users'),
   
   getUserWithDetails: (userId: string) => 
     api.get(`/admin/users/${userId}`),
@@ -76,6 +76,9 @@ export const adminAPI = {
   
   createUser: (data: any) => 
     api.post('/admin/users', data),
+  
+  updateUserAttendance: (userId: string, attending: boolean) =>
+    api.put(`/admin/users/${userId}/attendance`, { attending }),
   
   getMigrationStatus: () => 
     api.get('/admin/migrations'),
