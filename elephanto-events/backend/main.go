@@ -67,6 +67,7 @@ func main() {
 	eventHandler := handlers.NewEventHandler(database.DB)
 	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
 	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
+	velvetHourHandler := handlers.NewVelvetHourHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -104,6 +105,12 @@ func main() {
 	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
+	
+	// Velvet Hour endpoints (requires auth)
+	protected.HandleFunc("/velvet-hour/status", velvetHourHandler.GetStatus).Methods("GET")
+	protected.HandleFunc("/velvet-hour/join", velvetHourHandler.JoinSession).Methods("POST")
+	protected.HandleFunc("/velvet-hour/confirm-match", velvetHourHandler.ConfirmMatch).Methods("POST")
+	protected.HandleFunc("/velvet-hour/feedback", velvetHourHandler.SubmitFeedback).Methods("POST")
 	
 	// Event attendance endpoints (requires auth)
 	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
@@ -145,6 +152,14 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// Velvet Hour admin management
+	admin.HandleFunc("/events/{eventId}/velvet-hour/status", velvetHourHandler.GetAdminStatus).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
@@ -244,6 +259,7 @@ func serve() {
 	eventHandler := handlers.NewEventHandler(database.DB)
 	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
 	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
+	velvetHourHandler := handlers.NewVelvetHourHandler(database.DB)
 
 	r := mux.NewRouter()
 
@@ -281,6 +297,12 @@ func serve() {
 	protected.HandleFunc("/cocktail-preference", cocktailHandler.SavePreference).Methods("POST")
 	protected.HandleFunc("/survey-response", surveyHandler.GetSurveyResponse).Methods("GET")
 	protected.HandleFunc("/survey-response", surveyHandler.CreateSurveyResponse).Methods("POST")
+	
+	// Velvet Hour endpoints (requires auth)
+	protected.HandleFunc("/velvet-hour/status", velvetHourHandler.GetStatus).Methods("GET")
+	protected.HandleFunc("/velvet-hour/join", velvetHourHandler.JoinSession).Methods("POST")
+	protected.HandleFunc("/velvet-hour/confirm-match", velvetHourHandler.ConfirmMatch).Methods("POST")
+	protected.HandleFunc("/velvet-hour/feedback", velvetHourHandler.SubmitFeedback).Methods("POST")
 	
 	// Event attendance endpoints (requires auth)
 	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
@@ -322,6 +344,14 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// Velvet Hour admin management
+	admin.HandleFunc("/events/{eventId}/velvet-hour/status", velvetHourHandler.GetAdminStatus).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")

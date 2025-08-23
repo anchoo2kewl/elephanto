@@ -26,7 +26,12 @@ type Event struct {
 	SurveyEnabled             bool       `json:"surveyEnabled" db:"survey_enabled"`
 	TheHourEnabled            bool       `json:"theHourEnabled" db:"the_hour_enabled"`
 	TheHourActiveDate         *time.Time `json:"theHourActiveDate" db:"the_hour_active_date"`
-	TheHourLink               *string    `json:"theHourLink" db:"the_hour_link"`
+	TheHourAvailable          bool       `json:"theHourAvailable" db:"the_hour_available"`
+	TheHourStarted            bool       `json:"theHourStarted" db:"the_hour_started"`
+	TheHourRoundDuration      int        `json:"theHourRoundDuration" db:"the_hour_round_duration"`
+	TheHourBreakDuration      int        `json:"theHourBreakDuration" db:"the_hour_break_duration"`
+	TheHourTotalRounds        int        `json:"theHourTotalRounds" db:"the_hour_total_rounds"`
+	TheHourMinParticipants    int        `json:"theHourMinParticipants" db:"the_hour_min_participants"`
 	CreatedAt                 time.Time  `json:"createdAt" db:"created_at"`
 	UpdatedAt                 time.Time  `json:"updatedAt" db:"updated_at"`
 	CreatedBy                 *uuid.UUID `json:"createdBy" db:"created_by"`
@@ -80,7 +85,11 @@ type CreateEventRequest struct {
 	SurveyEnabled             bool       `json:"surveyEnabled"`
 	TheHourEnabled            bool       `json:"theHourEnabled"`
 	TheHourActiveDate         *time.Time `json:"theHourActiveDate"`
-	TheHourLink               *string    `json:"theHourLink"`
+	TheHourAvailable          bool       `json:"theHourAvailable"`
+	TheHourRoundDuration      *int       `json:"theHourRoundDuration"`
+	TheHourBreakDuration      *int       `json:"theHourBreakDuration"`
+	TheHourTotalRounds        *int       `json:"theHourTotalRounds"`
+	TheHourMinParticipants    *int       `json:"theHourMinParticipants"`
 }
 
 type UpdateEventRequest struct {
@@ -101,7 +110,11 @@ type UpdateEventRequest struct {
 	SurveyEnabled             *bool      `json:"surveyEnabled"`
 	TheHourEnabled            *bool      `json:"theHourEnabled"`
 	TheHourActiveDate         *time.Time `json:"theHourActiveDate"`
-	TheHourLink               *string    `json:"theHourLink"`
+	TheHourAvailable          *bool      `json:"theHourAvailable"`
+	TheHourRoundDuration      *int       `json:"theHourRoundDuration"`
+	TheHourBreakDuration      *int       `json:"theHourBreakDuration"`
+	TheHourTotalRounds        *int       `json:"theHourTotalRounds"`
+	TheHourMinParticipants    *int       `json:"theHourMinParticipants"`
 }
 
 type CreateEventDetailRequest struct {
