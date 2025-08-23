@@ -42,7 +42,7 @@ export interface Event {
   surveyEnabled: boolean;
   theHourEnabled: boolean;
   theHourActiveDate?: string;
-  theHourLink?: string;
+  theHourAvailable: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy?: string;

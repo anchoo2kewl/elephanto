@@ -9,6 +9,7 @@ import { Dashboard } from '@/pages/Dashboard';
 import { Onboarding } from '@/pages/Onboarding';
 import { Settings } from '@/pages/Settings';
 import { Admin } from '@/pages/Admin';
+import { VelvetHour } from '@/pages/VelvetHour';
 import { authAPI } from '@/services/api';
 
 const VerifyRoute: React.FC = () => {
@@ -151,6 +152,14 @@ const AppRoutes: React.FC = () => {
             <Layout>
               <Admin />
             </Layout>
+          </ProtectedRoute>
+        } 
+      />
+      <Route 
+        path="/velvet-hour" 
+        element={
+          <ProtectedRoute>
+            <VelvetHour />
           </ProtectedRoute>
         } 
       />

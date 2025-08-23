@@ -9,6 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cocktailApi } from '@/services/cocktailApi';
 import { surveyApi } from '@/services/surveyApi';
 import { eventApi, EventWithDetails, EventDetail, EventFAQ } from '@/services/eventApi';
+import { velvetHourApi } from '@/services/velvetHourApi';
+import { VelvetHourStatusResponse } from '@/types/velvet-hour';
 import { Ticket, Wine, FileText, Clock } from 'lucide-react';
 
 
@@ -22,6 +24,7 @@ export const Dashboard: React.FC = () => {
   const [hasSurveyResponse, setHasSurveyResponse] = useState<boolean>(false);
   const [eventData, setEventData] = useState<EventWithDetails | null>(null);
   const [loading, setLoading] = useState(true);
+  const [_velvetHourStatus, setVelvetHourStatus] = useState<VelvetHourStatusResponse | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -41,6 +44,17 @@ export const Dashboard: React.FC = () => {
         if (surveyResponse.data) {
           setSurveyData(surveyResponse.data);
           setHasSurveyResponse(true);
+        }
+
+        // Load Velvet Hour status if enabled
+        if (eventResponse.data.event.theHourEnabled) {
+          try {
+            const velvetHourResponse = await velvetHourApi.getStatus();
+            setVelvetHourStatus(velvetHourResponse.data);
+          } catch (error) {
+            // Velvet Hour might not be started yet, that's fine
+            console.log('Velvet Hour not started yet');
+          }
         }
 
       } catch (error) {
@@ -80,17 +94,13 @@ export const Dashboard: React.FC = () => {
           showToast('Survey is not available for this event', 'info');
         }
         break;
-      case 'event':
-        // The Hour functionality (only active if enabled)
-        if (event.theHourEnabled) {
-          if (event.theHourLink) {
-            // Open the provided link
-            window.open(event.theHourLink, '_blank');
-          } else {
-            showToast('The Hour will be active on event day!', 'info');
-          }
+      case 'velvet-hour':
+        // The Velvet Hour functionality
+        if (event.theHourEnabled && event.theHourAvailable) {
+          // Navigate to Velvet Hour page - let the Velvet Hour page handle session checks
+          window.location.href = '/velvet-hour';
         } else {
-          showToast('The Hour is not available for this event', 'info');
+          showToast('The Velvet Hour is coming soon!', 'info');
         }
         break;
       default:
@@ -175,11 +185,11 @@ export const Dashboard: React.FC = () => {
     
     // Show The Hour if enabled
     ...(event.theHourEnabled ? [{ 
-      label: 'The Hour', 
-      value: event.theHourLink ? 'Enter' : 'Coming Soon', 
+      label: 'The Velvet Hour', 
+      value: event.theHourAvailable ? 'Enter' : 'Coming Soon',
       icon: Clock, 
-      action: 'event' as const,
-      disabled: !event.theHourLink
+      action: 'velvet-hour' as const,
+      disabled: !event.theHourAvailable
     }] : []),
   ];
 

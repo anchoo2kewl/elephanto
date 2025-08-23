@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { GlassCard } from '@/components/GlassCard';
 import { adminAPI } from '@/services/api';
 import { eventApi } from '@/services/eventApi';
@@ -10,6 +10,9 @@ import {
   Save, X, Eye, Settings, MapPin, Clock, Ticket, Wine, FileText,
   Trash2, Download, ScrollText, Key
 } from 'lucide-react';
+import { VelvetHourControl } from '@/components/Admin/VelvetHourControl';
+import { velvetHourApi } from '@/services/velvetHourApi';
+import { AdminVelvetHourStatusResponse } from '@/types/velvet-hour';
 
 interface UserDetails {
   id: string;
@@ -56,7 +59,7 @@ interface EventDetails {
   surveyEnabled: boolean;
   theHourEnabled: boolean;
   theHourActiveDate?: string;
-  theHourLink?: string;
+  theHourAvailable: boolean;
 }
 
 export const Admin: React.FC = () => {
@@ -68,7 +71,7 @@ export const Admin: React.FC = () => {
   const [editingUser, setEditingUser] = useState<UserDetails | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events' | 'audit-logs' | 'tokens'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events' | 'velvet-hour' | 'audit-logs' | 'tokens'>('overview');
   const [eventModalTab, setEventModalTab] = useState<'basic' | 'details'>('basic');
   const [eventDetails, setEventDetails] = useState<any[]>([]);
   const [notification, setNotification] = useState<{
@@ -92,6 +95,11 @@ export const Admin: React.FC = () => {
   const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
   const [newTokenData, setNewTokenData] = useState<{ name: string; expiresIn: number }>({ name: '', expiresIn: 90 });
   const [createdToken, setCreatedToken] = useState<string>('');
+  
+  // Velvet Hour state
+  const [velvetHourStatus, setVelvetHourStatus] = useState<AdminVelvetHourStatusResponse | null>(null);
+  const [velvetHourLoading, setVelvetHourLoading] = useState(false);
+  const [activeEvent, setActiveEvent] = useState<EventDetails | null>(null);
 
   // ESC key support for modals
   useEscapeKey(() => setEditingUser(null), !!editingUser);
@@ -120,6 +128,7 @@ export const Admin: React.FC = () => {
       loadTokens();
     }
   }, [activeTab]);
+
 
   // Debounce audit logs search
   useEffect(() => {
@@ -333,7 +342,7 @@ export const Admin: React.FC = () => {
       surveyEnabled: true,
       theHourEnabled: false,
       theHourActiveDate: '',
-      theHourLink: ''
+      theHourAvailable: false
     });
     setEventDetails([]);
     setEventModalTab('basic');
@@ -365,7 +374,7 @@ export const Admin: React.FC = () => {
         theHourActiveDate: selectedEvent.theHourActiveDate && selectedEvent.theHourActiveDate !== '' 
           ? new Date(selectedEvent.theHourActiveDate).toISOString() 
           : undefined,
-        theHourLink: selectedEvent.theHourLink || undefined
+        theHourAvailable: selectedEvent.theHourAvailable
       };
       
       Object.keys(eventData).forEach(key => {
@@ -545,6 +554,107 @@ export const Admin: React.FC = () => {
     }
   };
 
+  // Velvet Hour handlers
+  const loadVelvetHourStatus = useCallback(async () => {
+    if (!activeEvent?.id) return;
+    
+    setVelvetHourLoading(true);
+    try {
+      const response = await velvetHourApi.getAdminStatus(activeEvent.id);
+      setVelvetHourStatus(response.data);
+    } catch (error) {
+      console.error('Failed to load Velvet Hour status:', error);
+      showNotification('Failed to load Velvet Hour status', 'error');
+    } finally {
+      setVelvetHourLoading(false);
+    }
+  }, [activeEvent?.id]);
+
+  const handleVelvetHourStartSession = async () => {
+    if (!activeEvent?.id) return;
+    
+    try {
+      await velvetHourApi.startSession(activeEvent.id);
+      await loadVelvetHourStatus();
+      showNotification('Velvet Hour session started', 'success');
+    } catch (error) {
+      console.error('Failed to start Velvet Hour session:', error);
+      showNotification('Failed to start session', 'error');
+    }
+  };
+
+  const handleVelvetHourStartRound = async (manualMatches?: any[]) => {
+    if (!activeEvent?.id) return;
+    
+    try {
+      const data = manualMatches ? { matches: manualMatches } : {};
+      await velvetHourApi.startRound(activeEvent.id, data);
+      await loadVelvetHourStatus();
+      showNotification('Round started', 'success');
+    } catch (error) {
+      console.error('Failed to start round:', error);
+      showNotification('Failed to start round', 'error');
+    }
+  };
+
+  const handleVelvetHourEndSession = async () => {
+    if (!activeEvent?.id) return;
+    
+    try {
+      await velvetHourApi.endSession(activeEvent.id);
+      await loadVelvetHourStatus();
+      showNotification('Velvet Hour session ended', 'success');
+    } catch (error) {
+      console.error('Failed to end Velvet Hour session:', error);
+      showNotification('Failed to end session', 'error');
+    }
+  };
+
+  const handleVelvetHourUpdateConfig = async (config: any) => {
+    if (!activeEvent?.id) return;
+    
+    try {
+      await velvetHourApi.updateConfig(activeEvent.id, config);
+      await loadVelvetHourStatus();
+      showNotification('Configuration updated', 'success');
+    } catch (error) {
+      console.error('Failed to update configuration:', error);
+      showNotification('Failed to update configuration', 'error');
+    }
+  };
+
+  const handleVelvetHourResetSession = async () => {
+    if (!activeEvent?.id) return;
+    
+    const confirmed = confirm(
+      'Are you sure you want to reset the Velvet Hour session? This will permanently delete all session data, matches, and feedback. This action cannot be undone.'
+    );
+    
+    if (!confirmed) return;
+    
+    try {
+      await velvetHourApi.resetSession(activeEvent.id);
+      await loadVelvetHourStatus();
+      showNotification('Velvet Hour session reset successfully', 'success');
+    } catch (error) {
+      console.error('Failed to reset Velvet Hour session:', error);
+      showNotification('Failed to reset session', 'error');
+    }
+  };
+
+  // Load active event and Velvet Hour status
+  useEffect(() => {
+    if (activeTab === 'velvet-hour') {
+      // Find the active event
+      const active = events.find(event => event.isActive);
+      setActiveEvent(active || null);
+      
+      if (active) {
+        loadVelvetHourStatus();
+      }
+    }
+  }, [activeTab, events, loadVelvetHourStatus]);
+
   const stats = [
     { label: 'Total Users', value: users.length.toString(), icon: Users },
     { label: 'Admin Users', value: users.filter(u => u.role === 'admin').length.toString(), icon: Shield },
@@ -599,6 +709,7 @@ export const Admin: React.FC = () => {
           { id: 'overview', label: 'Overview', icon: Database },
           { id: 'users', label: 'Users', icon: Users },
           { id: 'events', label: 'Events', icon: Calendar },
+          { id: 'velvet-hour', label: 'Velvet Hour', icon: Clock },
           { id: 'audit-logs', label: 'Audit Logs', icon: ScrollText },
           { id: 'tokens', label: 'API Tokens', icon: Key },
         ].map(({ id, label, icon: Icon }) => (
@@ -1858,17 +1969,83 @@ export const Admin: React.FC = () => {
                   </div>
                 </div>
 
-                {/* ✅ The Hour Link (inside wrapper) */}
+                {/* ✅ Velvet Hour Configuration */}
                 {selectedEvent.theHourEnabled && (
-                  <div className="mt-4">
-                    <label className="block text-white/80 text-sm mb-2">The Hour Link (optional)</label>
-                    <input
-                      type="url"
-                      value={selectedEvent.theHourLink || ''}
-                      onChange={(e) => setSelectedEvent({ ...selectedEvent, theHourLink: e.target.value })}
-                      className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50"
-                      placeholder="https://your-hour-link.com (leave blank for 'Coming Soon')"
-                    />
+                  <div className="mt-4 p-4 bg-white/5 rounded-lg border border-white/10">
+                    <div className="flex items-center justify-between mb-3">
+                      <h4 className="text-white font-medium">Velvet Hour Configuration</h4>
+                      <span className="text-xs text-white/60 bg-purple-600/20 px-2 py-1 rounded">Interactive Matching</span>
+                    </div>
+                    
+                    {/* Availability Toggle */}
+                    <div className="mb-4 p-3 bg-white/5 rounded-lg border border-white/10">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-white font-medium text-sm">Make Available to Users</label>
+                          <p className="text-white/60 text-xs mt-1">
+                            Controls if users see "Enter" or "Coming Soon". Admin must still start the session manually.
+                          </p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={selectedEvent.theHourAvailable}
+                          onChange={(e) => setSelectedEvent({...selectedEvent, theHourAvailable: e.target.checked})}
+                          className="w-4 h-4 text-purple-600 bg-white/10 border-white/20 rounded"
+                        />
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-white/80 text-xs mb-1">Round Duration (min)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="30"
+                            defaultValue="10"
+                            className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-white/80 text-xs mb-1">Break Duration (min)</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="15"
+                            defaultValue="5"
+                            className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-white/80 text-xs mb-1">Total Rounds</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="8"
+                            defaultValue="4"
+                            className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-white/80 text-xs mb-1">Min Participants</label>
+                          <input
+                            type="number"
+                            min="2"
+                            max="20"
+                            defaultValue="4"
+                            className="w-full px-2 py-1 bg-white/10 border border-white/20 rounded text-white text-sm"
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="text-xs text-white/60">
+                        💡 Use the Velvet Hour tab to manage live sessions and start rounds manually.
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2157,6 +2334,57 @@ export const Admin: React.FC = () => {
             </>
           )}
         </GlassCard>
+      )}
+
+      {/* Velvet Hour Tab */}
+      {activeTab === 'velvet-hour' && (
+        <div>
+          {!activeEvent ? (
+            <GlassCard className="p-6">
+              <div className="text-center py-12">
+                <Clock className="h-12 w-12 mx-auto mb-4 text-white/50" />
+                <h3 className="text-lg font-semibold text-white mb-2">No Active Event</h3>
+                <p className="text-white/70">You need to have an active event to manage Velvet Hour.</p>
+                <p className="text-white/50 text-sm mt-2">
+                  Go to the Events tab and activate an event first.
+                </p>
+              </div>
+            </GlassCard>
+          ) : velvetHourLoading ? (
+            <GlassCard className="p-6">
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              </div>
+            </GlassCard>
+          ) : velvetHourStatus ? (
+            <VelvetHourControl
+              eventId={activeEvent.id}
+              eventTitle={activeEvent.title}
+              eventDate={activeEvent.date}
+              eventTime={activeEvent.time}
+              status={velvetHourStatus}
+              onStartSession={handleVelvetHourStartSession}
+              onStartRound={handleVelvetHourStartRound}
+              onEndSession={handleVelvetHourEndSession}
+              onUpdateConfig={handleVelvetHourUpdateConfig}
+              onResetSession={handleVelvetHourResetSession}
+            />
+          ) : (
+            <GlassCard className="p-6">
+              <div className="text-center py-12">
+                <Clock className="h-12 w-12 mx-auto mb-4 text-white/50" />
+                <h3 className="text-lg font-semibold text-white mb-2">Failed to Load</h3>
+                <p className="text-white/70">Could not load Velvet Hour status.</p>
+                <button
+                  onClick={loadVelvetHourStatus}
+                  className="mt-4 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-lg transition-all duration-200"
+                >
+                  Retry
+                </button>
+              </div>
+            </GlassCard>
+          )}
+        </div>
       )}
 
       {/* API Tokens Tab */}

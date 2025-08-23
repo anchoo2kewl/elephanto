@@ -1,0 +1,42 @@
+import api from './api';
+import { 
+  VelvetHourStatusResponse,
+  SubmitFeedbackRequest,
+  AdminVelvetHourStatusResponse,
+  StartRoundRequest,
+  UpdateVelvetHourConfigRequest
+} from '@/types/velvet-hour';
+
+export const velvetHourApi = {
+  // User endpoints
+  getStatus: () => 
+    api.get<VelvetHourStatusResponse>('/velvet-hour/status'),
+    
+  joinSession: () => 
+    api.post('/velvet-hour/join'),
+    
+  confirmMatch: (matchId: string) => 
+    api.post('/velvet-hour/confirm-match', { matchId }),
+    
+  submitFeedback: (data: SubmitFeedbackRequest) => 
+    api.post('/velvet-hour/feedback', data),
+
+  // Admin endpoints
+  getAdminStatus: (eventId: string) => 
+    api.get<AdminVelvetHourStatusResponse>(`/admin/events/${eventId}/velvet-hour/status`),
+    
+  startSession: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/start`),
+    
+  startRound: (eventId: string, data?: StartRoundRequest) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/start-round`, data || {}),
+    
+  endSession: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/end`),
+    
+  updateConfig: (eventId: string, config: UpdateVelvetHourConfigRequest) => 
+    api.put(`/admin/events/${eventId}/velvet-hour/config`, config),
+    
+  resetSession: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/reset`),
+};
