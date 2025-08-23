@@ -88,6 +88,48 @@ export const adminAPI = {
 
   updateUserCocktail: (userId: string, cocktailData: any) =>
     api.put(`/admin/users/${userId}/cocktail`, cocktailData),
+
+  deleteUser: (userId: string) =>
+    api.delete(`/admin/users/${userId}`),
+
+  exportUsersCSV: () =>
+    api.get('/admin/users/export/csv', {
+      responseType: 'blob', // Important for file downloads
+      headers: {
+        'Accept': 'text/csv'
+      }
+    }),
+
+  // Audit logs
+  getAuditLogs: (params?: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    action?: string;
+    adminId?: string;
+    targetUserId?: string;
+  }) => {
+    const searchParams = new URLSearchParams();
+    if (params?.page) searchParams.set('page', params.page.toString());
+    if (params?.limit) searchParams.set('limit', params.limit.toString());
+    if (params?.search) searchParams.set('search', params.search);
+    if (params?.action) searchParams.set('action', params.action);
+    if (params?.adminId) searchParams.set('adminId', params.adminId);
+    if (params?.targetUserId) searchParams.set('targetUserId', params.targetUserId);
+    
+    const queryString = searchParams.toString();
+    return api.get(`/admin/audit-logs${queryString ? `?${queryString}` : ''}`);
+  },
+
+  // Personal access tokens
+  getTokens: () =>
+    api.get('/admin/tokens'),
+
+  createToken: (data: { name: string; expiresIn: number }) =>
+    api.post('/admin/tokens', data),
+
+  deleteToken: (tokenId: string) =>
+    api.delete(`/admin/tokens/${tokenId}`),
 };
 
 export default api;

@@ -42,8 +42,9 @@ check_port_conflict() {
     local port="$1"
     local service_name="$2"
     
-    if lsof -i ":$port" >/dev/null 2>&1; then
-        local process_info=$(lsof -i ":$port" | tail -n 1)
+    # Check specifically for processes listening on the port (not just connections)
+    if lsof -i ":$port" -s TCP:LISTEN >/dev/null 2>&1; then
+        local process_info=$(lsof -i ":$port" -s TCP:LISTEN | tail -n 1)
         echo -e "${RED}❌ Port conflict detected!${NC}"
         echo -e "   Port $port (for $service_name) is already in use:"
         echo -e "   $process_info"
@@ -275,6 +276,9 @@ start_backend() {
 }
 
 stop_backend() {
+    local stopped=false
+    
+    # First, try to stop via PID file
     if [ -f "$BACKEND_PID_FILE" ]; then
         local pid=$(cat "$BACKEND_PID_FILE")
         if kill -0 "$pid" 2>/dev/null; then
@@ -282,11 +286,30 @@ stop_backend() {
             kill "$pid"
             rm -f "$BACKEND_PID_FILE"
             echo -e "  ✅ Backend stopped"
+            stopped=true
         else
-            echo -e "  ⚠️  Backend not running"
+            echo -e "  ⚠️  Backend PID file exists but process not running"
             rm -f "$BACKEND_PID_FILE"
         fi
-    else
+    fi
+    
+    # Check for orphaned processes on the backend port
+    if lsof -ti ":$BACKEND_PORT" >/dev/null 2>&1; then
+        local port_pids=$(lsof -ti ":$BACKEND_PORT")
+        if [ -n "$port_pids" ]; then
+            echo -e "${YELLOW}🛑 Found orphaned processes on port $BACKEND_PORT, cleaning up...${NC}"
+            for pid in $port_pids; do
+                # Check if it's our Go process (main or go run)
+                if ps -p "$pid" -o command= | grep -q -E "(main|go run)"; then
+                    echo -e "  🧹 Killing orphaned backend process (PID: $pid)"
+                    kill "$pid" 2>/dev/null || true
+                    stopped=true
+                fi
+            done
+        fi
+    fi
+    
+    if [ "$stopped" = false ]; then
         echo -e "  ⚠️  Backend not running"
     fi
     

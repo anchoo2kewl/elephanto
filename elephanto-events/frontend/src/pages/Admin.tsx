@@ -7,7 +7,8 @@ import { SURVEY_OPTIONS, SURVEY_LABELS, COCKTAIL_OPTIONS, COCKTAIL_LABELS } from
 import { useEscapeKey } from '@/hooks/useEscapeKey';
 import { 
   Shield, Users, Calendar, Database, Edit, Plus, 
-  Save, X, Eye, Settings, MapPin, Clock, Ticket, Wine, FileText
+  Save, X, Eye, Settings, MapPin, Clock, Ticket, Wine, FileText,
+  Trash2, Download, ScrollText, Key
 } from 'lucide-react';
 
 interface UserDetails {
@@ -67,7 +68,7 @@ export const Admin: React.FC = () => {
   const [editingUser, setEditingUser] = useState<UserDetails | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events' | 'audit-logs' | 'tokens'>('overview');
   const [eventModalTab, setEventModalTab] = useState<'basic' | 'details'>('basic');
   const [eventDetails, setEventDetails] = useState<any[]>([]);
   const [notification, setNotification] = useState<{
@@ -75,6 +76,22 @@ export const Admin: React.FC = () => {
     type: 'success' | 'error';
   } | null>(null);
   const [savingEvent, setSavingEvent] = useState(false);
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState<string>('');
+  const [exportingCSV, setExportingCSV] = useState(false);
+  
+  // Audit logs state
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLogsLoading, setAuditLogsLoading] = useState(false);
+  const [auditLogsPage, setAuditLogsPage] = useState(1);
+  const [auditLogsTotal, setAuditLogsTotal] = useState(0);
+  const [auditLogsSearch, setAuditLogsSearch] = useState('');
+  
+  // Tokens state
+  const [tokens, setTokens] = useState<any[]>([]);
+  const [tokensLoading, setTokensLoading] = useState(false);
+  const [showCreateTokenModal, setShowCreateTokenModal] = useState(false);
+  const [newTokenData, setNewTokenData] = useState<{ name: string; expiresIn: number }>({ name: '', expiresIn: 90 });
+  const [createdToken, setCreatedToken] = useState<string>('');
 
   // ESC key support for modals
   useEscapeKey(() => setEditingUser(null), !!editingUser);
@@ -82,10 +99,38 @@ export const Admin: React.FC = () => {
     setIsEventModalOpen(false);
     setSelectedEvent(null);
   }, isEventModalOpen);
+  useEscapeKey(() => setDeleteConfirmUser(''), !!deleteConfirmUser);
+  useEscapeKey(() => setShowCreateTokenModal(false), showCreateTokenModal);
+  useEscapeKey(() => setCreatedToken(''), !!createdToken);
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // Load audit logs when audit logs tab is active
+  useEffect(() => {
+    if (activeTab === 'audit-logs') {
+      loadAuditLogs();
+    }
+  }, [activeTab, auditLogsPage, auditLogsSearch]);
+
+  // Load tokens when tokens tab is active
+  useEffect(() => {
+    if (activeTab === 'tokens') {
+      loadTokens();
+    }
+  }, [activeTab]);
+
+  // Debounce audit logs search
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (activeTab === 'audit-logs') {
+        setAuditLogsPage(1); // Reset to first page when searching
+        loadAuditLogs();
+      }
+    }, 300);
+    return () => clearTimeout(timeoutId);
+  }, [auditLogsSearch]);
 
   // 🔧 Notification helper
   const showNotification = (
@@ -114,6 +159,41 @@ export const Admin: React.FC = () => {
       showNotification('Failed to load admin data', 'error');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadAuditLogs = async () => {
+    setAuditLogsLoading(true);
+    try {
+      const params: any = {
+        page: auditLogsPage,
+        limit: 20,
+      };
+      if (auditLogsSearch) {
+        params.search = auditLogsSearch;
+      }
+      
+      const response = await adminAPI.getAuditLogs(params);
+      setAuditLogs(response.data.logs || []);
+      setAuditLogsTotal(response.data.total || 0);
+    } catch (error) {
+      console.error('Failed to load audit logs:', error);
+      showNotification('Failed to load audit logs', 'error');
+    } finally {
+      setAuditLogsLoading(false);
+    }
+  };
+
+  const loadTokens = async () => {
+    setTokensLoading(true);
+    try {
+      const response = await adminAPI.getTokens();
+      setTokens(response.data || []);
+    } catch (error) {
+      console.error('Failed to load tokens:', error);
+      showNotification('Failed to load tokens', 'error');
+    } finally {
+      setTokensLoading(false);
     }
   };
 
@@ -369,6 +449,102 @@ export const Admin: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (userId: string) => {
+    if (!deleteConfirmUser) {
+      setDeleteConfirmUser(userId);
+      return;
+    }
+
+    try {
+      await adminAPI.deleteUser(userId);
+      setUsers(users.filter(user => user.id !== userId));
+      setDeleteConfirmUser('');
+      showNotification('User deleted successfully', 'success');
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      showNotification('Failed to delete user', 'error');
+      setDeleteConfirmUser('');
+    }
+  };
+
+  const handleExportCSV = async () => {
+    setExportingCSV(true);
+    try {
+      const response = await adminAPI.exportUsersCSV();
+      
+      // Create blob and download
+      const blob = new Blob([response.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Get filename from response headers or generate one
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = 'users_export.csv';
+      if (contentDisposition) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      showNotification('User data exported successfully', 'success');
+    } catch (error) {
+      console.error('Failed to export user data:', error);
+      showNotification('Failed to export user data', 'error');
+    } finally {
+      setExportingCSV(false);
+    }
+  };
+
+  const handleCreateToken = async () => {
+    if (!newTokenData.name.trim()) {
+      showNotification('Token name is required', 'error');
+      return;
+    }
+
+    try {
+      const response = await adminAPI.createToken(newTokenData);
+      setTokens([response.data.detail, ...tokens]);
+      setCreatedToken(response.data.token);
+      setNewTokenData({ name: '', expiresIn: 90 });
+      showNotification('Token created successfully', 'success');
+    } catch (error) {
+      console.error('Failed to create token:', error);
+      showNotification('Failed to create token', 'error');
+    }
+  };
+
+  const handleDeleteToken = async (tokenId: string, tokenName: string) => {
+    if (!confirm(`Are you sure you want to delete token "${tokenName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await adminAPI.deleteToken(tokenId);
+      setTokens(tokens.filter(token => token.id !== tokenId));
+      showNotification('Token deleted successfully', 'success');
+    } catch (error) {
+      console.error('Failed to delete token:', error);
+      showNotification('Failed to delete token', 'error');
+    }
+  };
+
+  const copyTokenToClipboard = async (token: string) => {
+    try {
+      await navigator.clipboard.writeText(token);
+      showNotification('Token copied to clipboard', 'success');
+    } catch (error) {
+      showNotification('Failed to copy token', 'error');
+    }
+  };
+
   const stats = [
     { label: 'Total Users', value: users.length.toString(), icon: Users },
     { label: 'Admin Users', value: users.filter(u => u.role === 'admin').length.toString(), icon: Shield },
@@ -423,6 +599,8 @@ export const Admin: React.FC = () => {
           { id: 'overview', label: 'Overview', icon: Database },
           { id: 'users', label: 'Users', icon: Users },
           { id: 'events', label: 'Events', icon: Calendar },
+          { id: 'audit-logs', label: 'Audit Logs', icon: ScrollText },
+          { id: 'tokens', label: 'API Tokens', icon: Key },
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
@@ -483,8 +661,21 @@ export const Admin: React.FC = () => {
             <h2 className="text-xl font-semibold text-white">
               User Management 👥
             </h2>
-            <button 
-              onClick={() => setEditingUser({
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={handleExportCSV}
+                disabled={exportingCSV}
+                className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-lg transition-all duration-200 disabled:opacity-50"
+              >
+                {exportingCSV ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                <span>{exportingCSV ? 'Exporting...' : 'Export CSV'}</span>
+              </button>
+              <button 
+                onClick={() => setEditingUser({
                 id: '',
                 email: '',
                 name: '',
@@ -518,15 +709,16 @@ export const Admin: React.FC = () => {
                   updatedAt: ''
                 }
               })}
-              className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
-            >
-              <Plus className="h-4 w-4" />
-              <span>Add User</span>
-            </button>
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add User</span>
+              </button>
+            </div>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="w-full">
+          <div className="overflow-x-auto pt-12 pb-4">
+            <table className="w-full relative">
               <thead>
                 <tr className="border-b border-white/20">
                   <th className="text-left text-white/80 py-3 px-2">User</th>
@@ -614,7 +806,7 @@ export const Admin: React.FC = () => {
                     <td className="py-4 px-2 text-white/70 text-sm">
                       {new Date(user.createdAt).toLocaleDateString()}
                     </td>
-                    <td className="py-4 px-2">
+                    <td className="py-4 px-2 relative overflow-visible">
                       <div className="flex items-center space-x-2">
                         <button
                           onClick={() => handleEditUser(user.id)}
@@ -652,6 +844,23 @@ export const Admin: React.FC = () => {
                             </div>
                           )}
                         </div>
+
+                        <button
+                          onClick={() => handleDeleteUser(user.id)}
+                          className={`relative rounded transition-all duration-300 transform ${
+                            deleteConfirmUser === user.id
+                              ? 'p-2 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white shadow-lg shadow-red-500/50 scale-110 animate-pulse border-2 border-red-400'
+                              : 'p-1 bg-red-600/20 hover:bg-red-600/30 text-red-200 hover:scale-105'
+                          }`}
+                          title={deleteConfirmUser === user.id ? '⚠️ CLICK AGAIN TO PERMANENTLY DELETE USER ⚠️' : 'Delete User'}
+                        >
+                          <Trash2 className={`${deleteConfirmUser === user.id ? 'h-5 w-5' : 'h-4 w-4'} transition-all duration-300`} />
+                          {deleteConfirmUser === user.id && (
+                            <div className="absolute top-1/2 -left-52 transform -translate-y-1/2 bg-gradient-to-r from-red-700 to-red-800 text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap font-bold animate-pulse z-[100] shadow-xl border-2 border-red-400 after:content-[''] after:absolute after:top-1/2 after:left-full after:transform after:-translate-y-1/2 after:border-4 after:border-transparent after:border-l-red-700">
+                              ⚠️ CONFIRM DELETE ⚠️
+                            </div>
+                          )}
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1814,6 +2023,343 @@ export const Admin: React.FC = () => {
                   <Save className="h-4 w-4" />
                 )}
                 <span>{savingEvent ? 'Saving...' : 'Save Event'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Audit Logs Tab */}
+      {activeTab === 'audit-logs' && (
+        <GlassCard className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-semibold text-white">
+              Audit Logs 📊
+            </h2>
+            <div className="flex items-center space-x-3">
+              <input
+                type="text"
+                placeholder="Search logs..."
+                value={auditLogsSearch}
+                onChange={(e) => setAuditLogsSearch(e.target.value)}
+                className="px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-blue-400"
+              />
+            </div>
+          </div>
+
+          {auditLogsLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            </div>
+          ) : auditLogs.length === 0 ? (
+            <div className="text-center py-12">
+              <ScrollText className="h-12 w-12 mx-auto mb-4 text-white/50" />
+              <p className="text-white/70">No audit logs found</p>
+              <p className="text-white/50 text-sm mt-2">Admin actions will appear here</p>
+            </div>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-white/20">
+                      <th className="text-left text-white/80 py-3 px-2">Date</th>
+                      <th className="text-left text-white/80 py-3 px-2">Admin</th>
+                      <th className="text-left text-white/80 py-3 px-2">Action</th>
+                      <th className="text-left text-white/80 py-3 px-2">Target</th>
+                      <th className="text-left text-white/80 py-3 px-2">Changes</th>
+                      <th className="text-left text-white/80 py-3 px-2">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {auditLogs.map((log: any) => (
+                      <tr key={log.id} className="border-b border-white/10 hover:bg-white/5 transition-colors">
+                        <td className="py-3 px-2 text-white/70 text-sm">
+                          {new Date(log.createdAt).toLocaleDateString()} {new Date(log.createdAt).toLocaleTimeString()}
+                        </td>
+                        <td className="py-3 px-2 text-white">
+                          <div className="text-sm">
+                            <div className="font-medium">{log.adminName || 'System'}</div>
+                            {log.adminEmail && (
+                              <div className="text-white/60 text-xs">{log.adminEmail}</div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-2">
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            log.action === 'user_delete' ? 'bg-red-600/20 text-red-200' :
+                            log.action === 'user_update' ? 'bg-blue-600/20 text-blue-200' :
+                            log.action === 'role_change' ? 'bg-purple-600/20 text-purple-200' :
+                            log.action === 'survey_update' ? 'bg-green-600/20 text-green-200' :
+                            log.action === 'cocktail_update' ? 'bg-yellow-600/20 text-yellow-200' :
+                            log.action.includes('token') ? 'bg-indigo-600/20 text-indigo-200' :
+                            'bg-gray-600/20 text-gray-200'
+                          }`}>
+                            {log.action.replace('_', ' ').toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="py-3 px-2 text-white">
+                          {log.targetName ? (
+                            <div className="text-sm">
+                              <div className="font-medium">{log.targetName}</div>
+                              {log.targetEmail && (
+                                <div className="text-white/60 text-xs">{log.targetEmail}</div>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-white/50 text-sm">—</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-2 text-white/70 text-sm max-w-xs">
+                          {log.oldValue && Object.keys(log.oldValue).length > 0 && (
+                            <details className="cursor-pointer">
+                              <summary className="text-blue-300 hover:text-blue-200">View changes</summary>
+                              <div className="mt-2 p-2 bg-black/20 rounded text-xs">
+                                <div className="text-red-300 mb-1">Old: {JSON.stringify(log.oldValue, null, 2)}</div>
+                                <div className="text-green-300">New: {JSON.stringify(log.newValue, null, 2)}</div>
+                              </div>
+                            </details>
+                          )}
+                        </td>
+                        <td className="py-3 px-2 text-white/60 text-xs">
+                          {log.ipAddress || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              {auditLogsTotal > 20 && (
+                <div className="flex justify-between items-center mt-6 pt-4 border-t border-white/20">
+                  <div className="text-white/70 text-sm">
+                    Showing {((auditLogsPage - 1) * 20) + 1} to {Math.min(auditLogsPage * 20, auditLogsTotal)} of {auditLogsTotal} logs
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={() => setAuditLogsPage(Math.max(1, auditLogsPage - 1))}
+                      disabled={auditLogsPage === 1}
+                      className="px-3 py-1 bg-white/10 text-white rounded disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <button
+                      onClick={() => setAuditLogsPage(auditLogsPage + 1)}
+                      disabled={auditLogsPage * 20 >= auditLogsTotal}
+                      className="px-3 py-1 bg-white/10 text-white rounded disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </GlassCard>
+      )}
+
+      {/* API Tokens Tab */}
+      {activeTab === 'tokens' && (
+        <GlassCard className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-semibold text-white">
+              API Tokens 🔑
+            </h2>
+            <button 
+              onClick={() => setShowCreateTokenModal(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
+            >
+              <Plus className="h-4 w-4" />
+              <span>Create Token</span>
+            </button>
+          </div>
+
+          {tokensLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+            </div>
+          ) : tokens.length === 0 ? (
+            <div className="text-center py-12">
+              <Key className="h-12 w-12 mx-auto mb-4 text-white/50" />
+              <p className="text-white/70">No API tokens yet</p>
+              <p className="text-white/50 text-sm mt-2">Create your first token to access the API programmatically</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-white/20">
+                    <th className="text-left text-white/80 py-3 px-2">Name</th>
+                    <th className="text-left text-white/80 py-3 px-2">Last Used</th>
+                    <th className="text-left text-white/80 py-3 px-2">Expires</th>
+                    <th className="text-left text-white/80 py-3 px-2">Created</th>
+                    <th className="text-left text-white/80 py-3 px-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tokens.map((token: any) => (
+                    <tr key={token.id} className="border-b border-white/10 hover:bg-white/5 transition-colors">
+                      <td className="py-3 px-2 text-white">
+                        <div className="font-medium">{token.name}</div>
+                      </td>
+                      <td className="py-3 px-2 text-white/70 text-sm">
+                        {token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleDateString() : 'Never'}
+                      </td>
+                      <td className="py-3 px-2 text-white/70 text-sm">
+                        {token.expiresAt ? (
+                          <span className={new Date(token.expiresAt) < new Date() ? 'text-red-400' : ''}>
+                            {new Date(token.expiresAt).toLocaleDateString()}
+                          </span>
+                        ) : (
+                          <span className="text-green-400">Never</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-2 text-white/70 text-sm">
+                        {new Date(token.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-3 px-2">
+                        <button
+                          onClick={() => handleDeleteToken(token.id, token.name)}
+                          className="p-1 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded transition-all duration-200"
+                          title="Delete Token"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
+      )}
+
+      {/* Create Token Modal */}
+      {showCreateTokenModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-xl p-6 w-full max-w-md mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white">Create API Token</h3>
+              <button
+                onClick={() => setShowCreateTokenModal(false)}
+                className="text-white/60 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-white/80 text-sm mb-2">Token Name</label>
+                <input
+                  type="text"
+                  value={newTokenData.name}
+                  onChange={(e) => setNewTokenData({ ...newTokenData, name: e.target.value })}
+                  placeholder="e.g., API Scripts, Mobile App, etc."
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white placeholder-white/50 focus:outline-none focus:border-blue-400"
+                />
+              </div>
+
+              <div>
+                <label className="block text-white/80 text-sm mb-2">Expires In</label>
+                <select
+                  value={newTokenData.expiresIn}
+                  onChange={(e) => setNewTokenData({ ...newTokenData, expiresIn: parseInt(e.target.value) })}
+                  className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white focus:outline-none focus:border-blue-400"
+                >
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value={365}>1 year</option>
+                  <option value={0}>Never expires</option>
+                </select>
+              </div>
+
+              <div className="bg-yellow-600/20 border border-yellow-400/30 rounded-lg p-3">
+                <p className="text-yellow-200 text-sm">
+                  ⚠️ The token will only be shown once. Make sure to copy it!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                onClick={() => setShowCreateTokenModal(false)}
+                className="px-4 py-2 text-white/70 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCreateToken}
+                disabled={!newTokenData.name.trim()}
+                className="px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200 disabled:opacity-50"
+              >
+                Create Token
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Created Token Display Modal */}
+      {createdToken && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className="bg-black/80 backdrop-blur-md border border-white/20 rounded-xl p-6 w-full max-w-2xl mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white">Token Created Successfully! 🎉</h3>
+              <button
+                onClick={() => setCreatedToken('')}
+                className="text-white/60 hover:text-white"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="bg-red-600/20 border border-red-400/30 rounded-lg p-4">
+                <h4 className="text-red-200 font-medium mb-2">⚠️ Important Security Notice</h4>
+                <p className="text-red-200/80 text-sm">
+                  This is your personal access token. Copy it now as it won't be shown again.
+                  Treat it like a password and store it securely.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-white/80 text-sm mb-2">Your Personal Access Token</label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    value={createdToken}
+                    readOnly
+                    className="flex-1 px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white font-mono text-sm"
+                  />
+                  <button
+                    onClick={() => copyTokenToClipboard(createdToken)}
+                    className="px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-lg transition-all duration-200"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-blue-600/20 border border-blue-400/30 rounded-lg p-4">
+                <h4 className="text-blue-200 font-medium mb-2">💡 How to Use This Token</h4>
+                <div className="text-blue-200/80 text-sm space-y-2">
+                  <p>Include this token in your API requests:</p>
+                  <code className="block bg-black/40 p-2 rounded text-xs">
+                    curl -H "Authorization: Bearer {createdToken}" http://localhost:8080/api/admin/users
+                  </code>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-6">
+              <button
+                onClick={() => setCreatedToken('')}
+                className="px-4 py-2 bg-gray-600/20 hover:bg-gray-600/30 text-gray-200 rounded-lg transition-all duration-200"
+              >
+                I've Copied It Safely
               </button>
             </div>
           </div>

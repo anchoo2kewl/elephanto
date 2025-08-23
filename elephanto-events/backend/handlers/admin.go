@@ -4,11 +4,14 @@ import (
 	"database/sql"
 	"elephanto-events/middleware"
 	"elephanto-events/models"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
@@ -911,5 +914,441 @@ func (h *AdminHandler) UpdateUserCocktail(w http.ResponseWriter, r *http.Request
 	json.NewEncoder(w).Encode(map[string]string{
 		"message": "Cocktail preference updated successfully",
 	})
+}
+
+// DeleteUser deletes a user and all related data (admin only)
+func (h *AdminHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	userID, err := uuid.Parse(vars["id"])
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+
+	admin, ok := middleware.GetUserFromContext(r)
+	if !ok {
+		http.Error(w, "Admin not found", http.StatusInternalServerError)
+		return
+	}
+
+	// Check if user exists and get user info for logging
+	var userEmail string
+	err = h.db.QueryRow("SELECT email FROM users WHERE id = $1", userID).Scan(&userEmail)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "User not found", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "Failed to fetch user", http.StatusInternalServerError)
+		return
+	}
+
+	// Prevent admin from deleting themselves
+	if admin.ID == userID {
+		http.Error(w, "Cannot delete your own account", http.StatusBadRequest)
+		return
+	}
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		http.Error(w, "Failed to start transaction", http.StatusInternalServerError)
+		return
+	}
+	defer tx.Rollback()
+
+	// Delete related data in proper order to handle foreign key constraints
+	// Delete cocktail preferences
+	_, err = tx.Exec("DELETE FROM cocktail_preferences WHERE userId = $1", userID)
+	if err != nil {
+		log.Printf("Failed to delete cocktail preferences: %v", err)
+		http.Error(w, "Failed to delete user data", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete survey responses
+	_, err = tx.Exec("DELETE FROM survey_responses WHERE userId = $1", userID)
+	if err != nil {
+		log.Printf("Failed to delete survey responses: %v", err)
+		http.Error(w, "Failed to delete user data", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete event attendance
+	_, err = tx.Exec("DELETE FROM event_attendance WHERE user_id = $1", userID)
+	if err != nil {
+		log.Printf("Failed to delete event attendance: %v", err)
+		http.Error(w, "Failed to delete user data", http.StatusInternalServerError)
+		return
+	}
+
+	// Delete ALL audit logs where this user was the target
+	// (We must do this before deleting the user due to foreign key constraints)
+	_, err = tx.Exec("DELETE FROM adminauditlogs WHERE targetuserid = $1", userID)
+	if err != nil {
+		log.Printf("Failed to delete audit logs: %v", err)
+		http.Error(w, "Failed to delete user data", http.StatusInternalServerError)
+		return
+	}
+
+	// Log admin action for the deletion (but with NULL targetuserid to avoid FK issues)
+	_, err = tx.Exec(`
+		INSERT INTO adminauditlogs (adminid, targetuserid, action, oldvalue, newvalue, ipaddress)
+		VALUES ($1, NULL, 'user_delete', $2::jsonb, '{"deleted": true}'::jsonb, $3)
+	`, admin.ID, fmt.Sprintf(`{"user_id": "%s", "email": "%s"}`, userID.String(), userEmail), getClientIP(r))
+	if err != nil {
+		log.Printf("Failed to log admin action: %v", err)
+		http.Error(w, "Failed to log admin action", http.StatusInternalServerError)
+		return
+	}
+
+	// Finally, delete the user
+	result, err := tx.Exec("DELETE FROM users WHERE id = $1", userID)
+	if err != nil {
+		log.Printf("Failed to delete user: %v", err)
+		http.Error(w, "Failed to delete user", http.StatusInternalServerError)
+		return
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		http.Error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("Failed to commit transaction: %v", err)
+		http.Error(w, "Failed to commit transaction", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "User deleted successfully",
+	})
+}
+
+// ExportUsersCSV exports all users and their data as CSV (admin only)
+func (h *AdminHandler) ExportUsersCSV(w http.ResponseWriter, r *http.Request) {
+	// Get active event ID for additional context
+	var activeEventID *uuid.UUID
+	var eventID uuid.UUID
+	err := h.db.QueryRow("SELECT id FROM events WHERE is_active = true").Scan(&eventID)
+	if err == nil {
+		activeEventID = &eventID
+	}
+
+	// Build comprehensive query to get all user data
+	query := `
+		SELECT 
+			u.id, u.email, u.name, u.role, u.isOnboarded, u.createdAt, u.updatedAt,
+			COALESCE(sr.fullName, '') as survey_fullname,
+			COALESCE(sr.age, 0) as survey_age,
+			COALESCE(sr.gender, '') as survey_gender,
+			COALESCE(sr.torontoMeaning, '') as survey_toronto_meaning,
+			COALESCE(sr.personality, '') as survey_personality,
+			COALESCE(sr.connectionType, '') as survey_connection_type,
+			COALESCE(sr.instagramHandle, '') as survey_instagram,
+			COALESCE(sr.howHeardAboutUs, '') as survey_how_heard,
+			COALESCE(cp.preference, '') as cocktail_preference,
+			COALESCE(ea.attending, false) as attending_active_event
+		FROM users u
+		LEFT JOIN survey_responses sr ON u.id = sr.userId`
+
+	var args []interface{}
+	if activeEventID != nil {
+		query += ` AND sr.event_id = $1
+		LEFT JOIN cocktail_preferences cp ON u.id = cp.userId AND cp.event_id = $1
+		LEFT JOIN event_attendance ea ON u.id = ea.user_id AND ea.event_id = $1`
+		args = append(args, *activeEventID)
+	} else {
+		query += `
+		LEFT JOIN cocktail_preferences cp ON u.id = cp.userId
+		LEFT JOIN event_attendance ea ON u.id = ea.user_id`
+	}
+	
+	query += ` ORDER BY u.createdAt DESC`
+
+	rows, err := h.db.Query(query, args...)
+	if err != nil {
+		log.Printf("Failed to query users for CSV export: %v", err)
+		http.Error(w, "Failed to fetch users", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	// Set CSV headers
+	timestamp := time.Now().Format("2006-01-02_15-04-05")
+	filename := fmt.Sprintf("elephanto_users_export_%s.csv", timestamp)
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+
+	writer := csv.NewWriter(w)
+	defer writer.Flush()
+
+	// Write CSV headers
+	headers := []string{
+		"User ID", "Email", "Name", "Role", "Onboarded", "Created At", "Updated At",
+		"Survey Full Name", "Survey Age", "Survey Gender", "Toronto Meaning", 
+		"Personality", "Connection Type", "Instagram Handle", "How Heard About Us",
+		"Cocktail Preference", "Attending Active Event",
+	}
+	if err := writer.Write(headers); err != nil {
+		log.Printf("Failed to write CSV headers: %v", err)
+		return
+	}
+
+	// Write data rows
+	for rows.Next() {
+		var userID uuid.UUID
+		var email, name, role string
+		var isOnboarded, attending bool
+		var createdAt, updatedAt time.Time
+		var surveyFullName, surveyGender, torontoMeaning, personality, connectionType, instagramHandle, howHeard, cocktailPref string
+		var surveyAge int
+
+		err := rows.Scan(
+			&userID, &email, &name, &role, &isOnboarded, &createdAt, &updatedAt,
+			&surveyFullName, &surveyAge, &surveyGender, &torontoMeaning, &personality,
+			&connectionType, &instagramHandle, &howHeard, &cocktailPref, &attending,
+		)
+		if err != nil {
+			log.Printf("Failed to scan user row for CSV: %v", err)
+			continue
+		}
+
+		// Format data for CSV
+		ageStr := ""
+		if surveyAge > 0 {
+			ageStr = strconv.Itoa(surveyAge)
+		}
+
+		record := []string{
+			userID.String(),
+			email,
+			name,
+			role,
+			strconv.FormatBool(isOnboarded),
+			createdAt.Format("2006-01-02 15:04:05"),
+			updatedAt.Format("2006-01-02 15:04:05"),
+			surveyFullName,
+			ageStr,
+			surveyGender,
+			torontoMeaning,
+			personality,
+			connectionType,
+			instagramHandle,
+			howHeard,
+			cocktailPref,
+			strconv.FormatBool(attending),
+		}
+
+		if err := writer.Write(record); err != nil {
+			log.Printf("Failed to write CSV record: %v", err)
+			continue
+		}
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Printf("Error during CSV row iteration: %v", err)
+	}
+}
+
+// AuditLog represents an audit log entry with user names
+type AuditLog struct {
+	ID           string          `json:"id"`
+	AdminID      *string         `json:"adminId"`
+	AdminName    *string         `json:"adminName"`
+	AdminEmail   *string         `json:"adminEmail"`
+	TargetUserID *string         `json:"targetUserId"`
+	TargetName   *string         `json:"targetName"`
+	TargetEmail  *string         `json:"targetEmail"`
+	Action       string          `json:"action"`
+	OldValue     json.RawMessage `json:"oldValue"`
+	NewValue     json.RawMessage `json:"newValue"`
+	IPAddress    *string         `json:"ipAddress"`
+	CreatedAt    time.Time       `json:"createdAt"`
+}
+
+// AuditLogsResponse represents paginated audit logs response
+type AuditLogsResponse struct {
+	Logs       []AuditLog `json:"logs"`
+	Total      int        `json:"total"`
+	Page       int        `json:"page"`
+	Limit      int        `json:"limit"`
+	TotalPages int        `json:"totalPages"`
+}
+
+// GetAuditLogs returns paginated audit logs with search and filtering (admin only)
+func (h *AdminHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	pageStr := r.URL.Query().Get("page")
+	limitStr := r.URL.Query().Get("limit")
+	search := r.URL.Query().Get("search")
+	action := r.URL.Query().Get("action")
+	adminId := r.URL.Query().Get("adminId")
+	targetUserId := r.URL.Query().Get("targetUserId")
+
+	// Set default values
+	page := 1
+	limit := 50
+
+	if pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 200 {
+			limit = l
+		}
+	}
+
+	// Build query conditions
+	var conditions []string
+	var args []interface{}
+	argIndex := 1
+
+	if search != "" {
+		conditions = append(conditions, fmt.Sprintf("(admin.email ILIKE $%d OR admin.name ILIKE $%d OR target.email ILIKE $%d OR target.name ILIKE $%d OR al.action ILIKE $%d)", argIndex, argIndex, argIndex, argIndex, argIndex))
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern)
+		argIndex++
+	}
+
+	if action != "" {
+		conditions = append(conditions, fmt.Sprintf("al.action = $%d", argIndex))
+		args = append(args, action)
+		argIndex++
+	}
+
+	if adminId != "" {
+		if uuid, err := uuid.Parse(adminId); err == nil {
+			conditions = append(conditions, fmt.Sprintf("al.adminid = $%d", argIndex))
+			args = append(args, uuid)
+			argIndex++
+		}
+	}
+
+	if targetUserId != "" {
+		if uuid, err := uuid.Parse(targetUserId); err == nil {
+			conditions = append(conditions, fmt.Sprintf("al.targetuserid = $%d", argIndex))
+			args = append(args, uuid)
+			argIndex++
+		}
+	}
+
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	// Get total count
+	countQuery := fmt.Sprintf(`
+		SELECT COUNT(*) 
+		FROM adminauditlogs al
+		LEFT JOIN users admin ON al.adminid = admin.id
+		LEFT JOIN users target ON al.targetuserid = target.id
+		%s
+	`, whereClause)
+
+	var total int
+	err := h.db.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		log.Printf("Failed to get audit logs count: %v", err)
+		http.Error(w, "Failed to fetch audit logs", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate pagination
+	offset := (page - 1) * limit
+	totalPages := (total + limit - 1) / limit
+
+	// Get audit logs with pagination
+	query := fmt.Sprintf(`
+		SELECT 
+			al.id,
+			al.adminid,
+			admin.name as admin_name,
+			admin.email as admin_email,
+			al.targetuserid,
+			target.name as target_name,
+			target.email as target_email,
+			al.action,
+			COALESCE(al.oldvalue, '{}'::jsonb) as oldvalue,
+			COALESCE(al.newvalue, '{}'::jsonb) as newvalue,
+			al.ipaddress,
+			al.createdat
+		FROM adminauditlogs al
+		LEFT JOIN users admin ON al.adminid = admin.id
+		LEFT JOIN users target ON al.targetuserid = target.id
+		%s
+		ORDER BY al.createdat DESC
+		LIMIT $%d OFFSET $%d
+	`, whereClause, argIndex, argIndex+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := h.db.Query(query, args...)
+	if err != nil {
+		log.Printf("Failed to query audit logs: %v", err)
+		http.Error(w, "Failed to fetch audit logs", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var logs []AuditLog
+	for rows.Next() {
+		var auditLog AuditLog
+		var adminID, targetUserID *uuid.UUID
+		
+		err := rows.Scan(
+			&auditLog.ID,
+			&adminID,
+			&auditLog.AdminName,
+			&auditLog.AdminEmail,
+			&targetUserID,
+			&auditLog.TargetName,
+			&auditLog.TargetEmail,
+			&auditLog.Action,
+			&auditLog.OldValue,
+			&auditLog.NewValue,
+			&auditLog.IPAddress,
+			&auditLog.CreatedAt,
+		)
+		if err != nil {
+			log.Printf("Failed to scan audit log row: %v", err)
+			continue
+		}
+
+		// Convert UUIDs to strings
+		if adminID != nil {
+			adminIDStr := adminID.String()
+			auditLog.AdminID = &adminIDStr
+		}
+		if targetUserID != nil {
+			targetUserIDStr := targetUserID.String()
+			auditLog.TargetUserID = &targetUserIDStr
+		}
+
+		logs = append(logs, auditLog)
+	}
+
+	if err = rows.Err(); err != nil {
+		log.Printf("Error during audit logs iteration: %v", err)
+		http.Error(w, "Failed to process audit logs", http.StatusInternalServerError)
+		return
+	}
+
+	response := AuditLogsResponse{
+		Logs:       logs,
+		Total:      total,
+		Page:       page,
+		Limit:      limit,
+		TotalPages: totalPages,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
 }
 

@@ -61,6 +61,7 @@ func main() {
 	authHandler := handlers.NewAuthHandler(authService)
 	userHandler := handlers.NewUserHandler(database.DB)
 	adminHandler := handlers.NewAdminHandler(database.DB)
+	tokenHandler := handlers.NewTokenHandler(database.DB)
 	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
 	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
 	eventHandler := handlers.NewEventHandler(database.DB)
@@ -94,7 +95,7 @@ func main() {
 	auth.HandleFunc("/verify", authHandler.VerifyToken).Methods("GET")
 
 	protected := api.PathPrefix("").Subrouter()
-	protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	protected.Use(middleware.AuthMiddleware(cfg.JWTSecret, tokenHandler))
 	
 	protected.HandleFunc("/auth/me", authHandler.GetMe).Methods("GET")
 	protected.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
@@ -123,6 +124,8 @@ func main() {
 	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
 	admin.HandleFunc("/users/{id}/survey", adminHandler.UpdateUserSurvey).Methods("PUT")
 	admin.HandleFunc("/users/{id}/cocktail", adminHandler.UpdateUserCocktail).Methods("PUT")
+	admin.HandleFunc("/users/{id}", adminHandler.DeleteUser).Methods("DELETE")
+	admin.HandleFunc("/users/export/csv", adminHandler.ExportUsersCSV).Methods("GET")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
@@ -142,6 +145,14 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// Audit logs
+	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
+	
+	// Personal access tokens
+	admin.HandleFunc("/tokens", tokenHandler.ListTokens).Methods("GET")
+	admin.HandleFunc("/tokens", tokenHandler.CreateToken).Methods("POST")
+	admin.HandleFunc("/tokens/{id}", tokenHandler.DeleteToken).Methods("DELETE")
 	
 	// System
 	admin.HandleFunc("/migrations", adminHandler.GetMigrationStatus).Methods("GET")
@@ -227,6 +238,7 @@ func serve() {
 	authHandler := handlers.NewAuthHandler(authService)
 	userHandler := handlers.NewUserHandler(database.DB)
 	adminHandler := handlers.NewAdminHandler(database.DB)
+	tokenHandler := handlers.NewTokenHandler(database.DB)
 	cocktailHandler := handlers.NewCocktailPreferenceHandler(database.DB)
 	surveyHandler := handlers.NewSurveyResponseHandler(database.DB)
 	eventHandler := handlers.NewEventHandler(database.DB)
@@ -260,7 +272,7 @@ func serve() {
 	auth.HandleFunc("/verify", authHandler.VerifyToken).Methods("GET")
 
 	protected := api.PathPrefix("").Subrouter()
-	protected.Use(middleware.AuthMiddleware(cfg.JWTSecret))
+	protected.Use(middleware.AuthMiddleware(cfg.JWTSecret, tokenHandler))
 	
 	protected.HandleFunc("/auth/me", authHandler.GetMe).Methods("GET")
 	protected.HandleFunc("/auth/logout", authHandler.Logout).Methods("POST")
@@ -289,6 +301,8 @@ func serve() {
 	admin.HandleFunc("/users/{id}/attendance", adminHandler.UpdateUserAttendance).Methods("PUT")
 	admin.HandleFunc("/users/{id}/survey", adminHandler.UpdateUserSurvey).Methods("PUT")
 	admin.HandleFunc("/users/{id}/cocktail", adminHandler.UpdateUserCocktail).Methods("PUT")
+	admin.HandleFunc("/users/{id}", adminHandler.DeleteUser).Methods("DELETE")
+	admin.HandleFunc("/users/export/csv", adminHandler.ExportUsersCSV).Methods("GET")
 	
 	// Event management
 	admin.HandleFunc("/events", eventHandler.GetEvents).Methods("GET")
@@ -308,6 +322,14 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/faqs", eventFAQHandler.CreateEventFAQ).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.UpdateEventFAQ).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/faqs/{faqId}", eventFAQHandler.DeleteEventFAQ).Methods("DELETE")
+	
+	// Audit logs
+	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
+	
+	// Personal access tokens
+	admin.HandleFunc("/tokens", tokenHandler.ListTokens).Methods("GET")
+	admin.HandleFunc("/tokens", tokenHandler.CreateToken).Methods("POST")
+	admin.HandleFunc("/tokens/{id}", tokenHandler.DeleteToken).Methods("DELETE")
 	
 	// System
 	admin.HandleFunc("/migrations", adminHandler.GetMigrationStatus).Methods("GET")

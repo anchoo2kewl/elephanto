@@ -127,13 +127,12 @@ func (e *EmailService) determineEmailService(origin string) string {
 	}
 	
 	// Domain-based routing when override is enabled
-	if origin == "https://velvethour.ca" {
-		// Use Brevo for velvethour.ca production domain
+	if origin == "https://velvethour.ca" || origin == "https://elephantoevents.ca" {
+		// Use Brevo for both production domains
 		return "brevo"
 	}
 	
 	// Use mailpit for all other cases:
-	// - https://elephantoevents.ca (testing domain)
 	// - localhost (local development)
 	// - any other domain
 	return "mailpit"
