@@ -25,6 +25,15 @@ export const velvetHourApi = {
   getAdminStatus: (eventId: string) => 
     api.get<AdminVelvetHourStatusResponse>(`/admin/events/${eventId}/velvet-hour/status`),
     
+  getAttendanceStats: (eventId: string) => 
+    api.get<{
+      attendingCount: number;
+      requiredCount: number;
+      minParticipants: number;
+      canStart: boolean;
+      alreadyStarted: boolean;
+    }>(`/admin/events/${eventId}/velvet-hour/attendance`),
+    
   startSession: (eventId: string) => 
     api.post(`/admin/events/${eventId}/velvet-hour/start`),
     

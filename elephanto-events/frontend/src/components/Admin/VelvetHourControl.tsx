@@ -1,11 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AdminVelvetHourControlProps, ManualMatch } from '@/types/velvet-hour';
-// import { velvetHourApi } from '@/services/velvetHourApi';
+import { velvetHourApi } from '@/services/velvetHourApi';
 import { DraggableMatchmaking } from './DraggableMatchmaking';
 import { Play, Square, Settings, Users, Clock, Target, Calendar, RotateCcw } from 'lucide-react';
 
 export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
-  // eventId,
+  eventId,
   eventTitle,
   eventDate,
   eventTime,
@@ -25,6 +25,29 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
     totalRounds: 4,
     minParticipants: 4
   });
+  const [attendanceStats, setAttendanceStats] = useState<{
+    attendingCount: number;
+    requiredCount: number;
+    minParticipants: number;
+    canStart: boolean;
+    alreadyStarted: boolean;
+  } | null>(null);
+
+  // Fetch attendance stats
+  useEffect(() => {
+    const fetchAttendanceStats = async () => {
+      try {
+        const response = await velvetHourApi.getAttendanceStats(eventId);
+        setAttendanceStats(response.data);
+      } catch (error) {
+        console.error('Failed to fetch attendance stats:', error);
+      }
+    };
+
+    if (eventId) {
+      fetchAttendanceStats();
+    }
+  }, [eventId, status.session?.status]); // Re-fetch when session status changes
 
   // Calculate max possible matches
   const maxMatches = Math.floor(status.participants.length / 2);
@@ -196,24 +219,70 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
         </div>
       </div>
 
+      {/* Attendance Status */}
+      {!status.session && attendanceStats && (
+        <div className="bg-white/10 rounded-xl p-6 border border-white/20 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-white">Attendance Requirements</h3>
+            <Users className="h-5 w-5 text-blue-400" />
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{attendanceStats.attendingCount}</p>
+              <p className="text-sm text-white/70">Users Attending</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{attendanceStats.requiredCount}</p>
+              <p className="text-sm text-white/70">Required to Start</p>
+            </div>
+            <div className="text-center">
+              <p className="text-2xl font-bold text-white">{attendanceStats.minParticipants}</p>
+              <p className="text-sm text-white/70">Min Participants</p>
+            </div>
+          </div>
+
+          {!attendanceStats.canStart && (
+            <div className="bg-yellow-600/20 border border-yellow-600/30 rounded-lg p-3 mb-4">
+              <p className="text-yellow-200 text-sm">
+                {attendanceStats.alreadyStarted 
+                  ? "⚠️ Velvet Hour has already been run for this event. Use 'Reset Session' to run again."
+                  : `⚠️ Need ${attendanceStats.requiredCount - attendanceStats.attendingCount} more attending users to start Velvet Hour.`
+                }
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Control Buttons */}
       <div className="flex flex-wrap gap-4">
         {!status.session && (
-          <button
-            onClick={onStartSession}
-            disabled={status.participants.length < config.minParticipants}
-            className={`
-              flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold
-              ${status.participants.length >= config.minParticipants
-                ? 'bg-green-600 hover:bg-green-500 text-white'
-                : 'bg-gray-600 cursor-not-allowed text-gray-300'
-              }
-              transition-colors duration-200
-            `}
-          >
-            <Play className="h-4 w-4" />
-            <span>Start Velvet Hour</span>
-          </button>
+          <div className="flex flex-col">
+            <button
+              onClick={onStartSession}
+              disabled={!attendanceStats?.canStart}
+              className={`
+                flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold
+                ${attendanceStats?.canStart
+                  ? 'bg-green-600 hover:bg-green-500 text-white'
+                  : 'bg-gray-600 cursor-not-allowed text-gray-300'
+                }
+                transition-colors duration-200
+              `}
+            >
+              <Play className="h-4 w-4" />
+              <span>Start Velvet Hour</span>
+            </button>
+            {!attendanceStats?.canStart && attendanceStats && (
+              <p className="text-xs text-white/60 mt-2 max-w-xs">
+                {attendanceStats.alreadyStarted 
+                  ? "Session already completed"
+                  : `Only ${attendanceStats.attendingCount} of ${attendanceStats.requiredCount} required users are attending`
+                }
+              </p>
+            )}
+          </div>
         )}
 
         {status.session && status.canStartRound && (

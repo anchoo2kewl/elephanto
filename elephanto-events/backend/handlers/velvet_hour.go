@@ -997,6 +997,63 @@ func (h *VelvetHourHandler) ResetSession(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(map[string]string{"message": "Velvet Hour session reset successfully"})
 }
 
+// GetAttendanceStats returns attendance statistics for the admin panel
+func (h *VelvetHourHandler) GetAttendanceStats(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get event configuration
+	var minParticipants int
+	var theHourStarted bool
+	err = h.db.QueryRow(`
+		SELECT the_hour_min_participants, the_hour_started 
+		FROM events 
+		WHERE id = $1
+	`, eventID).Scan(&minParticipants, &theHourStarted)
+	
+	if err != nil {
+		log.Printf("Failed to get event info: %v", err)
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+
+	// Count attending users
+	var attendingCount int
+	err = h.db.QueryRow(`
+		SELECT COUNT(*) 
+		FROM event_attendance ea 
+		JOIN users u ON ea.user_id = u.id 
+		WHERE ea.event_id = $1 AND ea.attending = true AND u.is_onboarded = true
+	`, eventID).Scan(&attendingCount)
+	
+	if err != nil {
+		log.Printf("Failed to count attending users: %v", err)
+		http.Error(w, "Failed to check attendance", http.StatusInternalServerError)
+		return
+	}
+
+	// Calculate required attendance (2x min participants for unique pairings)
+	requiredAttending := minParticipants * 2
+	canStart := attendingCount >= requiredAttending && !theHourStarted
+
+	response := map[string]interface{}{
+		"attendingCount":    attendingCount,
+		"requiredCount":     requiredAttending,
+		"minParticipants":   minParticipants,
+		"canStart":          canStart,
+		"alreadyStarted":    theHourStarted,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(response)
+}
+
 // Helper function to join strings
 func joinStrings(strs []string, sep string) string {
 	if len(strs) == 0 {

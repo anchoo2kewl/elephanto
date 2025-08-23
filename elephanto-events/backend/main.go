@@ -155,6 +155,7 @@ func main() {
 	
 	// Velvet Hour admin management
 	admin.HandleFunc("/events/{eventId}/velvet-hour/status", velvetHourHandler.GetAdminStatus).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/attendance", velvetHourHandler.GetAttendanceStats).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
@@ -347,6 +348,7 @@ func serve() {
 	
 	// Velvet Hour admin management
 	admin.HandleFunc("/events/{eventId}/velvet-hour/status", velvetHourHandler.GetAdminStatus).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/attendance", velvetHourHandler.GetAttendanceStats).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
