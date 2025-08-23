@@ -22,45 +22,48 @@ git commit -m "Your descriptive commit message"
 git push
 ```
 
-### 2. Deploy Backend Changes
+### 2. Build and Push Docker Images
 
 ```bash
-# Build and push backend Docker image
+# Build backend image (from project root)
 docker build -t anchoo2kewl/elephanto-events-backend:latest -f backend/Dockerfile .
 docker push anchoo2kewl/elephanto-events-backend:latest
 
-# Tag for production (optional but recommended)
-docker tag anchoo2kewl/elephanto-events-backend:latest anchoo2kewl/elephanto-events-backend:production
-docker push anchoo2kewl/elephanto-events-backend:production
+# Build frontend image (from project root)  
+docker build -t anchoo2kewl/elephanto-frontend:production ./frontend
+docker push anchoo2kewl/elephanto-frontend:production
+```
 
-# Deploy to production
+### 3. Deploy to Production
+
+**IMPORTANT**: Production caches Docker images, so you must force pull latest images:
+
+```bash
+# Step 1: Force pull latest images in production
 ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
-  "docker stop elephanto_backend && \
-   docker rm elephanto_backend && \
-   docker run -d --name elephanto_backend \
-   --network elephanto-events_elephanto_network \
+  "docker pull anchoo2kewl/elephanto-events-backend:latest && \
+   docker pull anchoo2kewl/elephanto-frontend:production"
+
+# Step 2: Stop and remove old containers
+ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
+  "docker stop elephanto_backend elephanto_frontend && \
+   docker rm elephanto_backend elephanto_frontend"
+
+# Step 3: Start new containers with latest images
+ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
+  "docker run -d --name elephanto_backend \
+   --network elephanto-events_default \
    --env-file /opt/elephanto-events/elephanto-events/.env \
    --health-cmd='curl -f http://localhost:8080/api/health || exit 1' \
    --health-interval=30s --health-timeout=10s --health-retries=3 \
-   -p 8080:8080 anchoo2kewl/elephanto-events-backend:latest"
-```
-
-### 3. Deploy Frontend Changes
-
-```bash
-# Build and push frontend Docker image
-docker build -t anchoo2kewl/elephanto-frontend:production -f frontend/Dockerfile frontend/
-docker push anchoo2kewl/elephanto-frontend:production
-
-# Deploy to production
-ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
-  "docker stop elephanto_frontend && \
-   docker rm elephanto_frontend && \
+   -p 8080:8080 anchoo2kewl/elephanto-events-backend:latest && \
    docker run -d --name elephanto_frontend \
-   --network elephanto-events_elephanto_network \
+   --network elephanto-events_default \
    --env-file /opt/elephanto-events/elephanto-events/.env \
    -p 3000:3000 anchoo2kewl/elephanto-frontend:production"
 ```
+
+**Note**: The correct network name is `elephanto-events_default`, not `elephanto-events_elephanto_network`.
 
 ### 4. Verify Deployment
 
@@ -72,9 +75,28 @@ ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker ps"
 curl -I https://velvethour.ca
 curl -I https://elephantoevents.ca
 
-# Test API endpoints
+# Test API endpoints and verify new features
 curl -X GET "https://velvethour.ca/api/events/active" -s | jq .event.title
+curl -s "https://velvethour.ca/api/events/active" | grep -o '"theHour[^"]*":[^,}]*'
+
+# Test admin endpoints (requires valid token)
 curl -X GET "https://velvethour.ca/api/admin/events" -H "Authorization: Bearer invalid_token" -s
+```
+
+### 5. Post-Deployment Checks
+
+After successful deployment, verify new features are working:
+
+```bash
+# Check backend logs for any startup errors
+ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker logs elephanto_backend --tail=20"
+
+# Check frontend logs
+ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker logs elephanto_frontend --tail=10"
+
+# Verify database migrations ran successfully
+ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
+  "docker exec elephanto_postgres psql -U elephanto -d elephanto_events -c \"SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;\""
 ```
 
 ## Database Migrations
@@ -149,19 +171,29 @@ docker restart elephanto_backend elephanto_frontend
 
 ### Common Issues
 
-1. **500 Errors on API**
+1. **New Features Not Appearing After Deployment**
+   
+   This is usually caused by Docker image caching. **Always force pull latest images**:
+   ```bash
+   # Force pull latest images before restarting containers
+   ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
+     "docker pull anchoo2kewl/elephanto-events-backend:latest && \
+      docker pull anchoo2kewl/elephanto-frontend:production"
+   ```
+
+2. **500 Errors on API**
    ```bash
    # Check backend logs
    ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker logs elephanto_backend --tail=50"
    ```
 
-2. **502 Bad Gateway**
+3. **502 Bad Gateway**
    ```bash
    # Check if frontend container is running
    ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker ps | grep frontend"
    ```
 
-3. **Database Connection Issues**
+4. **Database Connection Issues**
    ```bash
    # Check postgres container
    ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker ps | grep postgres"
@@ -169,6 +201,16 @@ docker restart elephanto_backend elephanto_frontend
    # Test database connection
    ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca \
      "docker exec elephanto_postgres psql -U elephanto -d elephanto_events -c 'SELECT 1;'"
+   ```
+
+5. **Network Not Found Error**
+   
+   If you see `network elephanto-events_elephanto_network not found`, use the correct network name:
+   ```bash
+   # Check available networks
+   ssh -i ~/Downloads/ssh-key-2025-08-02.key ubuntu@elephantoevents.ca "docker network ls"
+   
+   # Use elephanto-events_default (not elephanto-events_elephanto_network)
    ```
 
 ### Container Management
