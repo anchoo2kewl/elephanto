@@ -712,6 +712,11 @@ export const Admin: React.FC = () => {
         loadVelvetHourStatus();
       });
 
+      const unsubscribeFeedbackSubmitted = subscribe(MESSAGE_TYPES.VELVET_HOUR_FEEDBACK_SUBMITTED, (data) => {
+        console.log('🔄 Admin: Feedback submitted, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus(); // Refresh to show updated feedback status
+      });
+
       // Cleanup function
       return () => {
         unsubscribeParticipantJoined();
@@ -719,6 +724,7 @@ export const Admin: React.FC = () => {
         unsubscribeSessionEnded();
         unsubscribeRoundStarted();
         unsubscribeSessionReset();
+        unsubscribeFeedbackSubmitted();
       };
     }
   }, [activeTab, activeEvent?.id, isConnected, subscribe, loadVelvetHourStatus]);

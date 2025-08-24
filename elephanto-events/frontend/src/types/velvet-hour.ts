@@ -42,6 +42,8 @@ export interface VelvetHourMatch {
   updatedAt: string;
   user1Name: string;
   user2Name: string;
+  user1FeedbackSubmitted?: boolean;
+  user2FeedbackSubmitted?: boolean;
 }
 
 export interface VelvetHourFeedback {
@@ -114,6 +116,12 @@ export interface VelvetHourWaitingProps {
   hasJoined: boolean;
   isConnected: boolean;
   config?: VelvetHourConfig;
+  isInActiveRound?: boolean;
+  currentRound?: number;
+  timeLeft?: number;
+  partnerName?: string;
+  matchNumber?: number;
+  matchColor?: string;
 }
 
 export interface VelvetHourMatchProps {
@@ -128,6 +136,7 @@ export interface VelvetHourRoundProps {
   currentRound: number;
   totalRounds: number;
   currentUserId: string;
+  roundDuration?: number; // Optional, defaults to 10 minutes
 }
 
 export interface VelvetHourFeedbackProps {
@@ -158,13 +167,30 @@ export interface AdminVelvetHourControlProps {
 export interface DraggableMatchmakingProps {
   participants: VelvetHourParticipant[];
   onMatchesChange: (matches: ManualMatch[]) => void;
+  onMatchStatsChange?: (stats: { incompleteMatches: number; completeMatches: number; duplicatePairings: number; validationErrors: string[] }) => void;
   maxMatches: number;
+  eventId: string;
+  previousMatches?: VelvetHourMatch[]; // All previous matches to check for duplicates
 }
 
-// Color options for matches
+// Color options for matches (supports up to 100 rooms)
 export const MATCH_COLORS = [
   'red', 'blue', 'green', 'purple', 'orange', 'yellow', 'pink', 'cyan',
-  'indigo', 'teal', 'lime', 'rose', 'amber', 'emerald', 'violet', 'sky'
+  'indigo', 'teal', 'lime', 'rose', 'amber', 'emerald', 'violet', 'sky',
+  'slate', 'gray', 'zinc', 'neutral', 'stone', 'red-dark', 'rose-dark', 'pink-dark',
+  'fuchsia', 'purple-dark', 'violet-dark', 'indigo-dark', 'blue-dark', 'sky-dark',
+  'cyan-dark', 'teal-dark', 'emerald-dark', 'green-dark', 'lime-dark', 'yellow-dark',
+  'amber-dark', 'orange-dark', 'red-light', 'rose-light', 'pink-light', 'fuchsia-light',
+  'purple-light', 'violet-light', 'indigo-light', 'blue-light', 'sky-light', 'cyan-light',
+  'teal-light', 'emerald-light', 'green-light', 'lime-light', 'yellow-light', 'amber-light',
+  'orange-light', 'red-bright', 'rose-bright', 'pink-bright', 'fuchsia-bright', 'purple-bright',
+  'violet-bright', 'indigo-bright', 'blue-bright', 'sky-bright', 'cyan-bright', 'teal-bright',
+  'emerald-bright', 'green-bright', 'lime-bright', 'yellow-bright', 'amber-bright', 'orange-bright',
+  'red-deep', 'rose-deep', 'pink-deep', 'fuchsia-deep', 'purple-deep', 'violet-deep',
+  'indigo-deep', 'blue-deep', 'sky-deep', 'cyan-deep', 'teal-deep', 'emerald-deep',
+  'green-deep', 'lime-deep', 'yellow-deep', 'amber-deep', 'orange-deep', 'brown',
+  'tan', 'beige', 'cream', 'ivory', 'pearl', 'silver', 'gold', 'bronze',
+  'copper', 'rust', 'maroon', 'crimson', 'scarlet', 'burgundy', 'wine', 'navy'
 ] as const;
 
 export type MatchColor = typeof MATCH_COLORS[number];

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { VelvetHourWaiting } from '@/components/VelvetHour/VelvetHourWaiting';
-import { VelvetHourMatch } from '@/components/VelvetHour/VelvetHourMatch';
 import { VelvetHourRound } from '@/components/VelvetHour/VelvetHourRound';
 import { VelvetHourFeedback } from '@/components/VelvetHour/VelvetHourFeedback';
 import { VelvetHourComplete } from '@/components/VelvetHour/VelvetHourComplete';
+import { VelvetHourTimeline } from '@/components/VelvetHour/VelvetHourTimeline';
+import { VelvetHourTimer } from '@/components/VelvetHour/VelvetHourTimer';
 import { useToast } from '@/components/Toast';
 import { velvetHourApi } from '@/services/velvetHourApi';
 import { useWebSocket, MESSAGE_TYPES } from '@/services/websocket';
@@ -22,6 +23,9 @@ export const VelvetHour: React.FC = () => {
   const [roundDuration, setRoundDuration] = useState<number>(10);
   const [eventId, setEventId] = useState<string | null>(null);
   const [disconnectMessage, setDisconnectMessage] = useState<string | null>(null);
+  
+  // Add rate limiting to prevent infinite loops
+  const [lastStatusCheck, setLastStatusCheck] = useState<number>(0);
 
   // WebSocket connection for real-time updates (only connect when we have eventId)
   const { isConnected, subscribe, websocketService } = useWebSocket(eventId || undefined);
@@ -36,24 +40,48 @@ export const VelvetHour: React.FC = () => {
     }
   }, [websocketService, showToast]);
 
-  // Initial status check (replaces polling)
+  // Initial status check (only once)
   useEffect(() => {
     checkStatus();
-    // No more polling - WebSocket will handle real-time updates
   }, []);
+  
+  // Periodic sync during active rounds (separate effect to avoid infinite loop)
+  useEffect(() => {
+    if (gameState === 'in_round' || gameState === 'break') {
+      console.log('🔄 VelvetHour: Setting up periodic sync to prevent timer drift');
+      const syncInterval = setInterval(() => {
+        console.log('🔄 VelvetHour: Periodic sync to prevent timer drift');
+        checkStatus();
+      }, 30000); // Sync every 30 seconds during active states
+      
+      return () => {
+        console.log('🔄 VelvetHour: Clearing periodic sync interval');
+        clearInterval(syncInterval);
+      };
+    }
+  }, [gameState]);
 
   useEffect(() => {
     if (timeLeft > 0) {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      console.log('⏱️ VelvetHour: Timer effect - timeLeft:', timeLeft, 'gameState:', gameState);
+      const timer = setTimeout(() => {
+        const newTimeLeft = timeLeft - 1;
+        console.log('⏱️ VelvetHour: Timer countdown - setting timeLeft to:', newTimeLeft);
+        setTimeLeft(newTimeLeft);
+      }, 1000);
       return () => clearTimeout(timer);
-    } else if (timeLeft === 0 && gameState === 'in_round') {
+    } else if (timeLeft === 0 && gameState === 'in_round' && status?.currentMatch) {
+      console.log('🏁 VelvetHour: Round ended (timeLeft=0), moving to feedback');
       // Round ended, move to feedback
       setGameState('feedback');
     } else if (timeLeft === 0 && gameState === 'break') {
+      console.log('🔄 VelvetHour: Break ended (timeLeft=0), checking status for next round');
       // Break ended, check for next round
       checkStatus();
+    } else if (timeLeft === 0) {
+      console.log('⚠️ VelvetHour: Timer at 0 but gameState is:', gameState, 'hasMatch:', !!status?.currentMatch);
     }
-  }, [timeLeft, gameState]);
+  }, [timeLeft, gameState, status?.currentMatch]);
 
   // WebSocket event listeners for real-time updates
   useEffect(() => {
@@ -125,67 +153,99 @@ export const VelvetHour: React.FC = () => {
   }, [isConnected, eventId, subscribe, showToast]);
 
   const checkStatus = async () => {
+    // Rate limiting: prevent calls more frequent than every 2 seconds
+    const now = Date.now();
+    if (now - lastStatusCheck < 2000) {
+      console.log('⏸️ VelvetHour: Skipping status check due to rate limiting');
+      return;
+    }
+    setLastStatusCheck(now);
+    
     try {
+      console.log('🔍 VelvetHour: Checking status...');
       const response = await velvetHourApi.getStatus();
       const statusData = response.data;
+      console.log('📊 VelvetHour: Status response:', {
+        isActive: statusData.isActive,
+        sessionStatus: statusData.session?.status,
+        currentRound: statusData.session?.currentRound,
+        timeLeft: statusData.timeLeft,
+        hasMatch: !!statusData.currentMatch,
+        hasParticipant: !!statusData.participant
+      });
       setStatus(statusData);
 
       // Extract eventId from session for WebSocket connection
       if (statusData.session?.eventId && eventId !== statusData.session.eventId) {
+        console.log('🔗 VelvetHour: Setting eventId for WebSocket:', statusData.session.eventId);
         setEventId(statusData.session.eventId);
       }
 
       // Update configuration if available
       if (statusData.config) {
+        console.log('⚙️ VelvetHour: Updating config:', statusData.config);
         setTotalRounds(statusData.config.totalRounds);
         setRoundDuration(statusData.config.roundDuration);
       }
 
       if (!statusData.isActive) {
+        console.log('❌ VelvetHour: Not active, setting not_active state');
         setGameState('not_active');
         return;
       }
 
       if (statusData.session) {
+        console.log('🎮 VelvetHour: Session found, processing status');
         setCurrentRound(statusData.session.currentRound || 1);
         
-        // Update time left if provided
-        if (statusData.timeLeft) {
+        // Always update time left if provided to prevent drift
+        if (statusData.timeLeft !== undefined && statusData.timeLeft !== null) {
+          console.log('⏱️ VelvetHour: Setting timeLeft to:', statusData.timeLeft);
           setTimeLeft(statusData.timeLeft);
+        } else {
+          console.log('⚠️ VelvetHour: No timeLeft provided in status');
         }
 
         // Determine game state based on session status
         if (statusData.session.status === 'completed') {
+          console.log('✅ VelvetHour: Session completed');
           setGameState('completed');
         } else if (statusData.session.status === 'break') {
+          console.log('☕ VelvetHour: Session in break');
           setGameState('break');
           if (statusData.timeLeft) {
             setTimeLeft(statusData.timeLeft);
           }
         } else if (statusData.session.status === 'in_round') {
-          if (statusData.currentMatch) {
-            const match = statusData.currentMatch;
-            
-            if (match.confirmedUser1 && match.confirmedUser2) {
-              setGameState('in_round');
-              if (statusData.timeLeft) {
-                setTimeLeft(statusData.timeLeft);
-              }
-            } else {
-              setGameState('matched');
-            }
+          console.log('🔄 VelvetHour: Session in round');
+          // Set timeLeft for all in_round scenarios
+          if (statusData.timeLeft) {
+            console.log('⏱️ VelvetHour: In round - setting timeLeft to:', statusData.timeLeft);
+            setTimeLeft(statusData.timeLeft);
           } else {
+            console.log('⚠️ VelvetHour: In round but no timeLeft provided!');
+          }
+          
+          if (statusData.currentMatch) {
+            console.log('👥 VelvetHour: User has match, setting in_round state');
+            // Users are automatically matched - no confirmation needed
+            setGameState('in_round');
+          } else {
+            console.log('👤 VelvetHour: User in round but no match, setting waiting state');
+            // User is in round but no match (unmatched participant)
             setGameState('waiting');
           }
         } else {
+          console.log('⏳ VelvetHour: Session waiting for round to start');
           // waiting for round to start
           setGameState(statusData.participant ? 'waiting' : 'waiting');
         }
       } else {
+        console.log('❌ VelvetHour: No session found, setting not_active');
         setGameState('not_active');
       }
     } catch (error) {
-      console.error('Failed to get Velvet Hour status:', error);
+      console.error('❌ VelvetHour: Failed to get Velvet Hour status:', error);
       setGameState('not_active');
     }
   };
@@ -207,33 +267,31 @@ export const VelvetHour: React.FC = () => {
     }
   };
 
-  const handleConfirmMatch = async (matchId: string) => {
-    try {
-      await velvetHourApi.confirmMatch(matchId);
-      showToast('Match confirmed! Round will start soon.', 'success');
-      checkStatus();
-    } catch (error) {
-      console.error('Failed to confirm match:', error);
-      showToast('Failed to confirm match. Please try again.', 'error');
-    }
-  };
 
   const handleSubmitFeedback = async (matchId: string, wantToConnect: boolean, feedbackReason: string) => {
     try {
-      await velvetHourApi.submitFeedback(matchId, wantToConnect, feedbackReason);
+      await velvetHourApi.submitFeedback({
+        matchId,
+        wantToConnect,
+        feedbackReason
+      });
       showToast('Feedback submitted! Thank you.', 'success');
+      // After feedback submission, transition to waiting state
+      setGameState('waiting');
+      // Also check status to get updated server state
       checkStatus();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to submit feedback:', error);
-      showToast('Failed to submit feedback. Please try again.', 'error');
+      // Check if it's a duplicate submission error
+      if (error.response?.status === 409 || error.message?.includes('already submitted')) {
+        showToast('You have already submitted feedback for this match.', 'info');
+        setGameState('waiting');
+      } else {
+        showToast('Failed to submit feedback. Please try again.', 'error');
+      }
     }
   };
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${minutes}:${secs.toString().padStart(2, '0')}`;
-  };
 
   // Wrapper component to add disconnect banner to all content
   const WithDisconnectBanner: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -297,29 +355,25 @@ export const VelvetHour: React.FC = () => {
   }
 
   if (gameState === 'waiting') {
+    const isInActiveRound = status?.session?.status === 'in_round';
+    
     return (
       <WithDisconnectBanner>
         <VelvetHourWaiting
+          onJoin={() => {}} // No-op since already joined
           hasJoined={true}
           participantCount={0} // This could be enhanced with participant count from status
           isConnected={isConnected}
           config={status?.config}
+          isInActiveRound={isInActiveRound}
+          currentRound={status?.session?.currentRound}
+          timeLeft={isInActiveRound ? timeLeft : undefined}
         />
       </WithDisconnectBanner>
     );
   }
 
-  if (gameState === 'matched' && status?.currentMatch) {
-    return (
-      <WithDisconnectBanner>
-        <VelvetHourMatch
-          match={status.currentMatch}
-          onConfirm={() => handleConfirmMatch(status.currentMatch!.id)}
-          isConnected={isConnected}
-        />
-      </WithDisconnectBanner>
-    );
-  }
+  // Note: 'matched' state removed - users go directly to 'in_round'
 
   if (gameState === 'in_round' && status?.currentMatch) {
     return (
@@ -327,10 +381,10 @@ export const VelvetHour: React.FC = () => {
         <VelvetHourRound
           match={status.currentMatch}
           timeLeft={timeLeft}
-          formatTime={formatTime}
           currentRound={currentRound}
           totalRounds={totalRounds}
-          isConnected={isConnected}
+          currentUserId={status?.participant?.userId || ''}
+          roundDuration={roundDuration}
         />
       </WithDisconnectBanner>
     );
@@ -341,28 +395,67 @@ export const VelvetHour: React.FC = () => {
       <WithDisconnectBanner>
         <VelvetHourFeedback
           match={status.currentMatch}
-          onSubmit={(wantToConnect: boolean, reason: string) => 
-            handleSubmitFeedback(status.currentMatch!.id, wantToConnect, reason)
+          onSubmitFeedback={(matchId: string, wantToConnect: boolean, reason: string) => 
+            handleSubmitFeedback(matchId, wantToConnect, reason)
           }
-          isConnected={isConnected}
+          currentUserId={status?.participant?.userId || ''}
         />
       </WithDisconnectBanner>
     );
   }
 
   if (gameState === 'break') {
+    // Calculate total break time in seconds
+    const totalBreakTime = (status?.config?.breakDuration || 5) * 60;
+    
     return (
       <WithDisconnectBanner>
-        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-          <div className="text-center text-white">
-            <h1 className="text-4xl font-bold mb-4">Round Complete!</h1>
-            <p className="text-xl mb-8">Break time - next round starts in:</p>
-            <div className="text-6xl font-mono font-bold mb-8">
-              {formatTime(timeLeft)}
+        <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center px-4">
+          <div className="text-center text-white max-w-lg mx-auto">
+            {/* Timeline showing progress through rounds */}
+            <VelvetHourTimeline 
+              currentRound={currentRound} 
+              totalRounds={totalRounds}
+              showOnlyDuringRounds={false}
+            />
+
+            {/* Timer with integrated progress ring */}
+            <VelvetHourTimer 
+              timeLeft={timeLeft}
+              totalTime={totalBreakTime}
+              title="BREAK TIME"
+              subtitle="NEXT ROUND STARTS"
+            />
+
+            {/* Break info and status */}
+            <div className="mb-8">
+              <h1 className="text-2xl font-bold mb-4">Round Complete!</h1>
+              <p className="text-xl mb-6">Take a break, stretch, grab a drink!</p>
+              
+              <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
+                <h2 className="text-lg font-semibold mb-3">What to do during break:</h2>
+                <div className="space-y-2 text-sm text-white/90 text-left">
+                  <p>• Reflect on your previous conversation</p>
+                  <p>• Grab a refreshment or visit the restroom</p>
+                  <p>• Meet other attendees in the lounge area</p>
+                  <p>• Prepare for your next match</p>
+                  <p>• Stay connected for the next round notification</p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center justify-center space-x-2">
-              <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-              <span className="text-sm">{isConnected ? 'Connected' : 'Connecting...'}</span>
+
+            {/* Connection status */}
+            <div className="bg-blue-500/20 border-2 border-blue-400/50 rounded-xl p-4">
+              <div className="flex items-center justify-center space-x-2 mb-2">
+                <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-sm font-medium">{isConnected ? 'Connected' : 'Connecting...'}</span>
+              </div>
+              <p className="font-medium">
+                💫 Stay connected for the next round!
+              </p>
+              <p className="text-xs text-white/70 mt-1">
+                You'll be automatically matched when the break ends
+              </p>
             </div>
           </div>
         </div>

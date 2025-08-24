@@ -3,6 +3,7 @@ import { AdminVelvetHourControlProps, ManualMatch } from '@/types/velvet-hour';
 import { velvetHourApi } from '@/services/velvetHourApi';
 import { DraggableMatchmaking } from './DraggableMatchmaking';
 import { useWebSocket, MESSAGE_TYPES } from '@/services/websocket';
+import { useToast } from '@/components/Toast';
 import { Play, Square, Settings, Users, Clock, Target, Calendar, RotateCcw, WifiOff } from 'lucide-react';
 
 export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
@@ -17,9 +18,16 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
   onUpdateConfig,
   onResetSession
 }) => {
+  const { showToast } = useToast();
   const [showConfig, setShowConfig] = useState(false);
   const [showMatchmaking, setShowMatchmaking] = useState(false);
   const [manualMatches, setManualMatches] = useState<ManualMatch[]>([]);
+  const [matchStats, setMatchStats] = useState({ 
+    incompleteMatches: 0, 
+    completeMatches: 0, 
+    duplicatePairings: 0, 
+    validationErrors: [] as string[] 
+  });
   const [showAttendingModal, setShowAttendingModal] = useState(false);
   const [showPresentModal, setShowPresentModal] = useState(false);
   const [attendingUsers, setAttendingUsers] = useState<any[]>([]);
@@ -193,6 +201,13 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       fetchAttendanceStats();
     });
 
+    const unsubscribeFeedbackSubmitted = subscribe(MESSAGE_TYPES.VELVET_HOUR_FEEDBACK_SUBMITTED, (data) => {
+      console.log('Velvet Hour feedback submitted:', data);
+      // Force refresh of the admin status to show updated feedback status
+      // The parent component should handle this by re-fetching admin status
+      // We could also trigger a status refresh event here
+    });
+
     // Handle user join/leave events for real-time attendance updates
     const unsubscribeUserJoined = subscribe(MESSAGE_TYPES.USER_JOINED_EVENT, (data) => {
       console.log('User joined event:', data);
@@ -228,6 +243,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       unsubscribeRoundStarted();
       unsubscribeSessionEnded();
       unsubscribeStatusUpdate();
+      unsubscribeFeedbackSubmitted();
       unsubscribeUserJoined();
       unsubscribeUserLeft();
     };
@@ -236,14 +252,76 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
   // Calculate max possible matches
   const maxMatches = Math.floor(status.participants.length / 2);
 
+  // Get all previous matches for duplicate validation
+  const getAllPreviousMatches = () => {
+    // For now, we'll use the current matches from status as "previous" matches
+    // In a production system, the backend should provide all historical matches from completed rounds
+    // This is a simplified implementation for demonstration
+    if (status.currentMatches && status.currentMatches.length > 0) {
+      // Return the full VelvetHourMatch objects for validation
+      return status.currentMatches;
+    }
+    return [];
+  };
+
+  // Helper function to format time for admin
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // Calculate time remaining in seconds for precise countdown
+  const calculateTimeRemaining = () => {
+    if (!status.session?.roundEndsAt) return 0;
+    const now = Date.now();
+    const endTime = new Date(status.session.roundEndsAt).getTime();
+    const timeLeftSeconds = Math.max(0, Math.floor((endTime - now) / 1000));
+    return timeLeftSeconds;
+  };
+
+  const [currentTimeRemaining, setCurrentTimeRemaining] = useState(0);
+
+  // Update timer every second for real-time countdown
+  useEffect(() => {
+    const updateTimer = () => {
+      setCurrentTimeRemaining(calculateTimeRemaining());
+    };
+
+    // Update immediately
+    updateTimer();
+
+    // Set up interval if session has an end time
+    if (status.session?.roundEndsAt) {
+      const interval = setInterval(updateTimer, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [status.session?.roundEndsAt]);
+
   const handleStartRound = () => {
+    // Button should only be enabled when all conditions are met
+    // So we can proceed directly without additional validation
     if (showMatchmaking && manualMatches.length > 0) {
+      // Using manual matches
       onStartRound(manualMatches);
-    } else {
+    } else if (!showMatchmaking) {
+      // Using automatic matching
       onStartRound();
     }
+    // Note: if showMatchmaking is true but no matches, button should be disabled
     setShowMatchmaking(false);
     setManualMatches([]);
+    setMatchStats({ incompleteMatches: 0, completeMatches: 0, duplicatePairings: 0, validationErrors: [] });
+  };
+
+  const handleCloseRound = async () => {
+    try {
+      await velvetHourApi.closeRound(eventId);
+      showToast('Round closed successfully! Break period started.', 'success');
+    } catch (error) {
+      console.error('Failed to close round:', error);
+      showToast('Failed to close round', 'error');
+    }
   };
 
   const handleUpdateConfig = () => {
@@ -488,13 +566,13 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             <Clock className="h-5 w-5 text-yellow-400" />
           </div>
           <p className="text-2xl font-bold text-white mb-1">
-            {status.session?.roundEndsAt ? 
-              `${Math.max(0, Math.floor((new Date(status.session.roundEndsAt).getTime() - Date.now()) / 60000))} min`
-              : '--'
+            {status.session?.roundEndsAt && currentTimeRemaining > 0 ? 
+              formatTime(currentTimeRemaining)
+              : status.session?.roundEndsAt ? '0:00' : '--'
             }
           </p>
           <p className="text-sm text-white/70">
-            Until round ends
+            {status.session?.status === 'in_round' ? 'Until round ends' : 'Until break ends'}
           </p>
         </div>
       </div>
@@ -576,32 +654,166 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
 
         {status.session && status.canStartRound && (
           <>
-            <button
-              onClick={handleStartRound}
-              className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
-            >
-              <Play className="h-4 w-4" />
-              <span>Start Next Round</span>
-            </button>
+            <div className="flex flex-col">
+              {(() => {
+                // Determine if we can start the round based on current matching state
+                let canStartRound = false;
+                let disabledReason = "";
+                
+                if (showMatchmaking) {
+                  // In manual matchmaking mode - all rooms with people must be complete (2 people per room)
+                  if (matchStats.incompleteMatches > 0) {
+                    canStartRound = false;
+                    disabledReason = `${matchStats.incompleteMatches} room${matchStats.incompleteMatches > 1 ? 's' : ''} incomplete - all rooms must have 2 people`;
+                  } else if (matchStats.completeMatches > 0) {
+                    canStartRound = true;
+                    disabledReason = `${matchStats.completeMatches} room${matchStats.completeMatches > 1 ? 's' : ''} ready to start`;
+                  } else {
+                    canStartRound = false;
+                    disabledReason = "No matches created - drag participants into rooms";
+                  }
+                } else {
+                  // Default mode - need at least 2 participants for automatic matching
+                  if (status.participants.length < 2) {
+                    canStartRound = false;
+                    disabledReason = "Need at least 2 participants to start a round";
+                  } else {
+                    canStartRound = true;
+                    disabledReason = `${Math.floor(status.participants.length / 2)} complete rooms can be created${status.participants.length % 2 === 1 ? ' (1 participant will sit out)' : ''}`;
+                  }
+                }
+
+                return (
+                  <>
+                    <button
+                      onClick={handleStartRound}
+                      disabled={!canStartRound}
+                      className={`
+                        flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200
+                        ${canStartRound
+                          ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                          : 'bg-gray-600 cursor-not-allowed text-gray-300'
+                        }
+                      `}
+                    >
+                      <Play className="h-4 w-4" />
+                      <span>Start Next Round</span>
+                    </button>
+                    <p className="text-xs text-white/60 mt-2 max-w-xs">
+                      {disabledReason}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
             
             <button
               onClick={() => setShowMatchmaking(!showMatchmaking)}
               className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
             >
               <Target className="h-4 w-4" />
-              <span>Custom Matches</span>
+              <span>Matches</span>
             </button>
           </>
         )}
 
         {status.session && (
-          <button
-            onClick={onEndSession}
-            className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
-          >
-            <Square className="h-4 w-4" />
-            <span>End Session</span>
-          </button>
+          <>
+            {status.session.status === 'in_round' && (
+              <button
+                onClick={handleCloseRound}
+                className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-orange-600 hover:bg-orange-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
+              >
+                <Clock className="h-4 w-4" />
+                <span>End Round</span>
+              </button>
+            )}
+
+            {(status.session.status === 'break' || (status.session.status === 'waiting' && status.session.currentRound > 0)) && 
+             status.session.currentRound < (status.config?.totalRounds || 4) && (
+              <>
+                <div className="flex flex-col">
+                  {(() => {
+                    // Check for validation errors when starting next round
+                    let canStartRound = false;
+                    let disabledReason = "";
+                    
+                    if (!showMatchmaking) {
+                      // Default state: admin must use Preview Matches first
+                      canStartRound = false;
+                      disabledReason = "Click 'Preview Matches' to see and customize Round 2 pairings";
+                    } else {
+                      // In manual matchmaking mode - check all validation conditions
+                      if (matchStats.duplicatePairings > 0) {
+                        canStartRound = false;
+                        disabledReason = `${matchStats.duplicatePairings} duplicate pairing${matchStats.duplicatePairings > 1 ? 's' : ''} found - these participants have already been matched`;
+                      } else if (matchStats.incompleteMatches > 0) {
+                        canStartRound = false;
+                        disabledReason = `${matchStats.incompleteMatches} room${matchStats.incompleteMatches > 1 ? 's' : ''} incomplete - all rooms must have 2 people`;
+                      } else if (matchStats.completeMatches > 0) {
+                        canStartRound = true;
+                        disabledReason = `${matchStats.completeMatches} room${matchStats.completeMatches > 1 ? 's' : ''} ready to start`;
+                      } else {
+                        canStartRound = false;
+                        disabledReason = "No matches created - drag participants into rooms";
+                      }
+                    }
+
+                    const handleStartNextRound = () => {
+                      if (showMatchmaking && manualMatches.length > 0) {
+                        // Using manual matches
+                        onStartRound(manualMatches);
+                      } else if (!showMatchmaking) {
+                        // Using automatic matching
+                        onStartRound();
+                      }
+                      setShowMatchmaking(false);
+                      setManualMatches([]);
+                      setMatchStats({ incompleteMatches: 0, completeMatches: 0, duplicatePairings: 0, validationErrors: [] });
+                    };
+                    
+                    return (
+                      <>
+                        <button
+                          onClick={handleStartNextRound}
+                          disabled={!canStartRound}
+                          className={`
+                            flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200
+                            ${canStartRound
+                              ? 'bg-green-600 hover:bg-green-500 text-white'
+                              : 'bg-gray-600 cursor-not-allowed text-gray-300'
+                            }
+                          `}
+                        >
+                          <Play className="h-4 w-4" />
+                          <span>Start Round {status.session.currentRound + 1}</span>
+                        </button>
+                        <p className="text-xs text-white/60 mt-2 max-w-xs text-center">
+                          {disabledReason}
+                        </p>
+                      </>
+                    );
+                  })()}
+                </div>
+                
+                <button
+                  onClick={() => setShowMatchmaking(!showMatchmaking)}
+                  className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
+                >
+                  <Target className="h-4 w-4" />
+                  <span>Preview Matches</span>
+                </button>
+              </>
+            )}
+            
+            <button
+              onClick={onEndSession}
+              className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
+            >
+              <Square className="h-4 w-4" />
+              <span>End Session</span>
+            </button>
+          </>
         )}
       </div>
 
@@ -609,13 +821,73 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       {showMatchmaking && (
         <div className="bg-white/5 rounded-xl p-6 border border-white/10">
           <h3 className="text-lg font-semibold text-white mb-4">
-            Custom Matchmaking - Round {(status.session?.currentRound || 0) + 1}
+            Matchmaking - Round {(status.session?.currentRound || 0) + 1}
           </h3>
           <DraggableMatchmaking
             participants={status.participants}
             onMatchesChange={setManualMatches}
+            onMatchStatsChange={setMatchStats}
             maxMatches={maxMatches}
+            eventId={eventId}
+            previousMatches={getAllPreviousMatches()}
           />
+          
+          {/* Match Status moved below the draggable component */}
+          <div className="bg-black/50 backdrop-blur-sm rounded-lg p-4 text-white text-sm mt-4">
+            <div className="flex flex-col space-y-2">
+              <div className="flex justify-between items-center">
+                <span>Match Status:</span>
+                <span className={`font-semibold ${
+                  matchStats.duplicatePairings > 0 ? 'text-red-400' :
+                  matchStats.completeMatches > 0 && matchStats.incompleteMatches === 0 ? 'text-green-400' : 'text-yellow-400'
+                }`}>
+                  {matchStats.duplicatePairings > 0 ? '⚠️ Duplicate pairings detected' :
+                   matchStats.completeMatches > 0 && matchStats.incompleteMatches === 0 ? 'All matches complete ✓' : 'Incomplete matches'}
+                </span>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                <div className="text-center">
+                  <div className="text-green-400 font-bold text-lg">{manualMatches.filter(match => match.user1Id && match.user2Id).length}</div>
+                  <div className="text-white/70">Complete Matches</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-yellow-400 font-bold text-lg">{manualMatches.filter(match => !match.user1Id || !match.user2Id).length}</div>
+                  <div className="text-white/70">Incomplete Matches</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-blue-400 font-bold text-lg">{status.participants.length - (manualMatches.filter(match => match.user1Id && match.user2Id).length * 2)}</div>
+                  <div className="text-white/70">Unmatched Users</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-cyan-400 font-bold text-lg">{manualMatches.length}</div>
+                  <div className="text-white/70">Active Zones</div>
+                </div>
+              </div>
+              
+              {/* Show validation errors */}
+              {matchStats.validationErrors.length > 0 && (
+                <div className="pt-2 border-t border-white/20">
+                  <div className="text-red-300 text-xs font-semibold mb-2">⚠️ Validation Errors:</div>
+                  <div className="space-y-1">
+                    {matchStats.validationErrors.map((error, index) => (
+                      <div key={index} className="text-red-200 text-xs">• {error}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Show general warnings if no validation errors */}
+              {matchStats.validationErrors.length === 0 && !(matchStats.completeMatches > 0 && matchStats.incompleteMatches === 0) && (
+                <div className="text-center pt-2 border-t border-white/20">
+                  <span className="text-yellow-200 text-xs">
+                    ⚠️ All rooms must have exactly 2 people to start the next round
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+          
           <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4">
             <p className="text-sm text-white/70 text-center sm:text-left">
               {manualMatches.length} of {maxMatches} possible matches created
@@ -672,7 +944,10 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       {status.currentMatches.length > 0 && (
         <div className="bg-white/10 rounded-xl p-6 border border-white/20">
           <h3 className="text-lg font-semibold text-white mb-4">
-            Current Matches - Round {status.session?.currentRound}
+            {status.session?.status === 'in_round' ? 
+              `Current Matches - Round ${status.session?.currentRound}` :
+              `Awaiting Feedback from Round ${status.session?.currentRound}`
+            }
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {status.currentMatches.map((match) => (
@@ -698,26 +973,32 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
                   <div className="flex space-x-1">
                     <div className={`
                       w-3 h-3 rounded-full
-                      ${match.confirmedUser1 ? 'bg-green-400' : 'bg-gray-400'}
+                      ${match.user1FeedbackSubmitted ? 'bg-green-400' : 'bg-gray-400'}
                     `}></div>
                     <div className={`
                       w-3 h-3 rounded-full
-                      ${match.confirmedUser2 ? 'bg-green-400' : 'bg-gray-400'}
+                      ${match.user2FeedbackSubmitted ? 'bg-green-400' : 'bg-gray-400'}
                     `}></div>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-white">{match.user1Name}</p>
-                  <p className="text-sm font-medium text-white">{match.user2Name}</p>
+                  <p className={`text-sm font-medium ${match.user1FeedbackSubmitted ? 'text-green-300' : 'text-white'}`}>
+                    {match.user1Name}
+                  </p>
+                  <p className={`text-sm font-medium ${match.user2FeedbackSubmitted ? 'text-green-300' : 'text-white'}`}>
+                    {match.user2Name}
+                  </p>
                 </div>
                 <p className="text-xs text-white/60 mt-2">
-                  {match.confirmedUser1 && match.confirmedUser2 ? 
-                    'Both confirmed' : 
-                    'Waiting for confirmation'}
+                  {match.user1FeedbackSubmitted && match.user2FeedbackSubmitted ? 
+                    'Feedback complete' : 
+                    'Awaiting feedback'}
                 </p>
               </div>
             ))}
           </div>
+          
+          {/* Note: Round ending is controlled by admin via "End Round" button in main controls */}
         </div>
       )}
 

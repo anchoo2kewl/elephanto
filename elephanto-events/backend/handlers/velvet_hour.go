@@ -177,10 +177,19 @@ func (h *VelvetHourHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	// Calculate time left
 	var timeLeft *int
 	if session.RoundEndsAt != nil {
-		remaining := int(time.Until(*session.RoundEndsAt).Seconds())
+		// Use UTC for consistent timezone handling
+		currentTimeUTC := time.Now().UTC()
+		remaining := int(session.RoundEndsAt.Sub(currentTimeUTC).Seconds())
+		log.Printf("🕐 VelvetHour GetStatus: RoundEndsAt(UTC)=%v, CurrentTime(UTC)=%v, Remaining=%d seconds", 
+			*session.RoundEndsAt, currentTimeUTC, remaining)
 		if remaining > 0 {
 			timeLeft = &remaining
+			log.Printf("⏱️ VelvetHour GetStatus: Setting timeLeft=%d for user %s", remaining, user.ID)
+		} else {
+			log.Printf("⏰ VelvetHour GetStatus: Round time expired (remaining=%d)", remaining)
 		}
+	} else {
+		log.Printf("⚠️ VelvetHour GetStatus: No RoundEndsAt time set for session %s", session.ID)
 	}
 
 	// Get event configuration
@@ -396,49 +405,18 @@ func (h *VelvetHourHandler) ConfirmMatch(w http.ResponseWriter, r *http.Request)
 		})
 	}
 
-	// If both confirmed, start the round timer
-	if (match.User1ID == user.ID && match.ConfirmedUser2) || 
-	   (match.User2ID == user.ID && match.ConfirmedUser1) {
-		
-		// Get event configuration
-		var roundDuration int
-		err = h.db.QueryRow(`
-			SELECT the_hour_round_duration
-			FROM events e
-			JOIN velvet_hour_sessions s ON e.id = s.event_id
-			WHERE s.id = $1
-		`, match.SessionID).Scan(&roundDuration)
-		
-		if err != nil {
-			log.Printf("Failed to get round duration: %v", err)
-			roundDuration = 10 // Default to 10 minutes
-		}
-
-		roundEnd := time.Now().Add(time.Duration(roundDuration) * time.Minute)
-		
-		// Update match and session with timer
-		_, err = h.db.Exec(`
-			UPDATE velvet_hour_matches 
-			SET confirmed_at = CURRENT_TIMESTAMP, started_at = CURRENT_TIMESTAMP
-			WHERE id = $1
-		`, req.MatchID)
-		
-		if err != nil {
-			log.Printf("Failed to update match start time: %v", err)
-		}
-
-		// Update session round timer
-		_, err = h.db.Exec(`
-			UPDATE velvet_hour_sessions
-			SET round_started_at = CURRENT_TIMESTAMP, round_ends_at = $1, 
-				status = 'in_round', updated_at = CURRENT_TIMESTAMP
-			WHERE id = $2
-		`, roundEnd, match.SessionID)
-		
-		if err != nil {
-			log.Printf("Failed to update session round timer: %v", err)
-		}
+	// Update match confirmation timestamp
+	_, err = h.db.Exec(`
+		UPDATE velvet_hour_matches 
+		SET confirmed_at = CURRENT_TIMESTAMP, started_at = CURRENT_TIMESTAMP
+		WHERE id = $1
+	`, req.MatchID)
+	
+	if err != nil {
+		log.Printf("Failed to update match start time: %v", err)
 	}
+
+	// Note: Session timer is set when round starts, not when individual matches are confirmed
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Match confirmed successfully"})
@@ -493,7 +471,12 @@ func (h *VelvetHourHandler) SubmitFeedback(w http.ResponseWriter, r *http.Reques
 	
 	if err != nil {
 		log.Printf("Failed to insert feedback: %v", err)
-		http.Error(w, "Failed to submit feedback", http.StatusInternalServerError)
+		// Check if it's a unique constraint violation (duplicate feedback)
+		if strings.Contains(err.Error(), "unique_feedback_per_match") {
+			http.Error(w, "Feedback already submitted for this match", http.StatusConflict)
+		} else {
+			http.Error(w, "Failed to submit feedback", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -586,17 +569,21 @@ func (h *VelvetHourHandler) GetAdminStatus(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Get current round matches
+	// Get current round matches with feedback status
 	currentMatches := []models.VelvetHourMatch{}
 	if sessionPtr != nil {
 		rows, err := h.db.Query(`
 			SELECT m.id, m.session_id, m.round_number, m.user1_id, m.user2_id,
 				   m.match_number, m.match_color, m.started_at, m.confirmed_user1,
 				   m.confirmed_user2, m.confirmed_at, m.created_at, m.updated_at,
-				   u1.name, u2.name
+				   u1.name, u2.name,
+				   COALESCE(f1.from_user_id IS NOT NULL, false) as user1_feedback_submitted,
+				   COALESCE(f2.from_user_id IS NOT NULL, false) as user2_feedback_submitted
 			FROM velvet_hour_matches m
 			JOIN users u1 ON m.user1_id = u1.id
 			JOIN users u2 ON m.user2_id = u2.id
+			LEFT JOIN velvet_hour_feedback f1 ON m.id = f1.match_id AND f1.from_user_id = m.user1_id
+			LEFT JOIN velvet_hour_feedback f2 ON m.id = f2.match_id AND f2.from_user_id = m.user2_id
 			WHERE m.session_id = $1 AND m.round_number = $2
 		`, sessionPtr.ID, sessionPtr.CurrentRound)
 		
@@ -609,6 +596,7 @@ func (h *VelvetHourHandler) GetAdminStatus(w http.ResponseWriter, r *http.Reques
 					&m.MatchNumber, &m.MatchColor, &m.StartedAt, &m.ConfirmedUser1,
 					&m.ConfirmedUser2, &m.ConfirmedAt, &m.CreatedAt, &m.UpdatedAt,
 					&m.User1Name, &m.User2Name,
+					&m.User1FeedbackSubmitted, &m.User2FeedbackSubmitted,
 				)
 				if err != nil {
 					log.Printf("Failed to scan match: %v", err)
@@ -853,12 +841,35 @@ func (h *VelvetHourHandler) StartRound(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Update session to new round
+	// Get round duration to set timer
+	var roundDuration int
+	err = h.db.QueryRow(`
+		SELECT the_hour_round_duration
+		FROM events e
+		JOIN velvet_hour_sessions s ON e.id = s.event_id
+		WHERE s.id = $1
+	`, sessionID).Scan(&roundDuration)
+	
+	if err != nil {
+		log.Printf("❌ VelvetHour StartRound: Failed to get round duration: %v", err)
+		roundDuration = 10 // Default to 10 minutes
+	}
+
+	// Ensure we use UTC for consistent timezone handling
+	roundEnd := time.Now().UTC().Add(time.Duration(roundDuration) * time.Minute)
+	log.Printf("🚀 VelvetHour StartRound: Starting round %d for session %s", nextRound, sessionID)
+	log.Printf("⏱️ VelvetHour StartRound: Round duration=%d minutes", roundDuration)
+	log.Printf("⏱️ VelvetHour StartRound: Current time (UTC)=%v", time.Now().UTC())
+	log.Printf("⏱️ VelvetHour StartRound: Round ends at (UTC)=%v", roundEnd)
+
+	// Update session to new round with timer
 	_, err = h.db.Exec(`
 		UPDATE velvet_hour_sessions 
-		SET current_round = $1, status = 'waiting', updated_at = CURRENT_TIMESTAMP
-		WHERE id = $2
-	`, nextRound, sessionID)
+		SET current_round = $1, status = 'in_round', 
+			round_started_at = CURRENT_TIMESTAMP, round_ends_at = $2, 
+			updated_at = CURRENT_TIMESTAMP
+		WHERE id = $3
+	`, nextRound, roundEnd, sessionID)
 	
 	if err != nil {
 		log.Printf("Failed to update session round: %v", err)
@@ -1515,6 +1526,437 @@ func (h *VelvetHourHandler) TestPresenceUpdate(w http.ResponseWriter, r *http.Re
 	} else {
 		http.Error(w, "WebSocket hub not available", http.StatusInternalServerError)
 	}
+}
+
+// GenerateAIMatches creates AI-powered matches based on user preferences
+func (h *VelvetHourHandler) GenerateAIMatches(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get active session
+	var sessionID uuid.UUID
+	err = h.db.QueryRow(`
+		SELECT id FROM velvet_hour_sessions 
+		WHERE event_id = $1 AND is_active = true
+	`, eventID).Scan(&sessionID)
+	
+	if err != nil {
+		http.Error(w, "No active session", http.StatusBadRequest)
+		return
+	}
+
+	// Get active participants who are present
+	var presentUserIDs []uuid.UUID
+	if h.hub != nil {
+		presentUserIDs = h.hub.GetPresentUsers(eventID)
+	}
+
+	if len(presentUserIDs) < 2 {
+		http.Error(w, "Not enough participants present", http.StatusBadRequest)
+		return
+	}
+
+	// Get user preferences for matching
+	userPreferences := make(map[uuid.UUID]map[string]interface{})
+	
+	for _, userID := range presentUserIDs {
+		var preferences map[string]interface{} = make(map[string]interface{})
+		
+		// Get user's survey responses
+		var primaryInterest, whyHere, professionalBackground sql.NullString
+		
+		err := h.db.QueryRow(`
+			SELECT primary_interest, why_here, professional_background
+			FROM survey_responses 
+			WHERE user_id = $1 AND event_id = $2
+		`, userID, eventID).Scan(&primaryInterest, &whyHere, &professionalBackground)
+		
+		if err == nil {
+			preferences["primaryInterest"] = primaryInterest.String
+			preferences["whyHere"] = whyHere.String
+			preferences["professionalBackground"] = professionalBackground.String
+		}
+
+		// Get cocktail preferences 
+		var cocktailPrefs []string
+		prefRows, err := h.db.Query(`
+			SELECT preference_type 
+			FROM cocktail_preferences 
+			WHERE user_id = $1 AND event_id = $2
+		`, userID, eventID)
+		
+		if err == nil {
+			defer prefRows.Close()
+			for prefRows.Next() {
+				var pref string
+				if err := prefRows.Scan(&pref); err == nil {
+					cocktailPrefs = append(cocktailPrefs, pref)
+				}
+			}
+		}
+		
+		preferences["cocktailPreferences"] = cocktailPrefs
+		userPreferences[userID] = preferences
+	}
+
+	// Generate matches based on preferences
+	matches := h.generateAIMatchingAlgorithm(presentUserIDs, userPreferences)
+	
+	// Convert to ManualMatch format
+	var manualMatches []models.ManualMatch
+	colors := []string{"red", "blue", "green", "purple", "orange", "yellow", "pink", "cyan", "indigo", "teal", "lime", "rose", "amber", "emerald", "violet", "sky"}
+	
+	for i, match := range matches {
+		if i >= 100 { // Limit to 100 rooms
+			break
+		}
+		
+		color := colors[i%len(colors)]
+		if i >= len(colors) {
+			// For rooms beyond basic colors, add modifiers
+			modifier := ""
+			switch (i / len(colors)) % 6 {
+			case 1:
+				modifier = "-dark"
+			case 2:
+				modifier = "-light"
+			case 3:
+				modifier = "-bright"
+			case 4:
+				modifier = "-deep"
+			case 5:
+				modifier = "-pale"
+			}
+			color = colors[i%len(colors)] + modifier
+		}
+		
+		manualMatches = append(manualMatches, models.ManualMatch{
+			User1ID:     match[0],
+			User2ID:     match[1],
+			MatchNumber: i + 1,
+			MatchColor:  color,
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(manualMatches)
+}
+
+// generateAIMatchingAlgorithm implements AI matching based on user preferences
+func (h *VelvetHourHandler) generateAIMatchingAlgorithm(userIDs []uuid.UUID, preferences map[uuid.UUID]map[string]interface{}) [][2]uuid.UUID {
+	var matches [][2]uuid.UUID
+	used := make(map[uuid.UUID]bool)
+	
+	// Shuffle for randomization
+	rand.Seed(time.Now().UnixNano())
+	shuffled := make([]uuid.UUID, len(userIDs))
+	copy(shuffled, userIDs)
+	for i := range shuffled {
+		j := rand.Intn(i + 1)
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	}
+
+	// Smart matching algorithm
+	for _, user1 := range shuffled {
+		if used[user1] {
+			continue
+		}
+		
+		bestMatch := uuid.Nil
+		bestScore := -1.0
+		
+		// Find best match for user1
+		for _, user2 := range shuffled {
+			if used[user2] || user1 == user2 {
+				continue
+			}
+			
+			score := h.calculateCompatibilityScore(user1, user2, preferences)
+			if score > bestScore {
+				bestScore = score
+				bestMatch = user2
+			}
+		}
+		
+		if bestMatch != uuid.Nil {
+			matches = append(matches, [2]uuid.UUID{user1, bestMatch})
+			used[user1] = true
+			used[bestMatch] = true
+		}
+	}
+	
+	return matches
+}
+
+// calculateCompatibilityScore calculates compatibility between two users
+func (h *VelvetHourHandler) calculateCompatibilityScore(user1, user2 uuid.UUID, preferences map[uuid.UUID]map[string]interface{}) float64 {
+	pref1 := preferences[user1]
+	pref2 := preferences[user2]
+	
+	if pref1 == nil || pref2 == nil {
+		return rand.Float64() // Random if no preferences
+	}
+	
+	score := 0.0
+	totalWeight := 0.0
+	
+	// Compare professional backgrounds (weight: 0.3)
+	if bg1, ok := pref1["professionalBackground"].(string); ok {
+		if bg2, ok := pref2["professionalBackground"].(string); ok && bg1 != "" && bg2 != "" {
+			if bg1 == bg2 {
+				score += 0.3 * 1.0 // Same background = perfect match
+			} else if h.relatedProfessions(bg1, bg2) {
+				score += 0.3 * 0.7 // Related backgrounds = good match
+			} else {
+				score += 0.3 * 0.3 // Different = complement each other
+			}
+			totalWeight += 0.3
+		}
+	}
+	
+	// Compare primary interests (weight: 0.4)
+	if int1, ok := pref1["primaryInterest"].(string); ok {
+		if int2, ok := pref2["primaryInterest"].(string); ok && int1 != "" && int2 != "" {
+			if int1 == int2 {
+				score += 0.4 * 0.8 // Same interest = good match
+			} else {
+				score += 0.4 * 0.5 // Different interests = learn from each other
+			}
+			totalWeight += 0.4
+		}
+	}
+	
+	// Compare cocktail preferences (weight: 0.3)
+	if prefs1, ok := pref1["cocktailPreferences"].([]string); ok {
+		if prefs2, ok := pref2["cocktailPreferences"].([]string); ok {
+			overlap := h.calculateOverlap(prefs1, prefs2)
+			score += 0.3 * overlap
+			totalWeight += 0.3
+		}
+	}
+	
+	if totalWeight == 0 {
+		return rand.Float64() // Random if no comparable data
+	}
+	
+	// Add small random factor for variety
+	finalScore := (score / totalWeight) + (rand.Float64() * 0.1)
+	return finalScore
+}
+
+// relatedProfessions checks if two professions are related
+func (h *VelvetHourHandler) relatedProfessions(prof1, prof2 string) bool {
+	prof1 = strings.ToLower(prof1)
+	prof2 = strings.ToLower(prof2)
+	
+	// Define related profession groups
+	techFields := []string{"software", "engineer", "developer", "programmer", "tech", "it", "computer"}
+	businessFields := []string{"business", "management", "marketing", "sales", "finance", "consulting"}
+	creativeFields := []string{"design", "creative", "art", "media", "content", "writing"}
+	healthFields := []string{"health", "medical", "doctor", "nurse", "therapy"}
+	
+	groups := [][]string{techFields, businessFields, creativeFields, healthFields}
+	
+	for _, group := range groups {
+		found1, found2 := false, false
+		for _, field := range group {
+			if strings.Contains(prof1, field) {
+				found1 = true
+			}
+			if strings.Contains(prof2, field) {
+				found2 = true
+			}
+		}
+		if found1 && found2 {
+			return true
+		}
+	}
+	
+	return false
+}
+
+// calculateOverlap calculates overlap between two string slices
+func (h *VelvetHourHandler) calculateOverlap(slice1, slice2 []string) float64 {
+	if len(slice1) == 0 || len(slice2) == 0 {
+		return 0.5 // Neutral if one is empty
+	}
+	
+	overlap := 0
+	for _, item1 := range slice1 {
+		for _, item2 := range slice2 {
+			if strings.EqualFold(item1, item2) {
+				overlap++
+				break
+			}
+		}
+	}
+	
+	maxLen := len(slice1)
+	if len(slice2) > maxLen {
+		maxLen = len(slice2)
+	}
+	
+	return float64(overlap) / float64(maxLen)
+}
+
+// GetUserPreferences returns user preferences for the admin interface
+func (h *VelvetHourHandler) GetUserPreferences(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	userIDStr := vars["userId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	
+	userID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.Error(w, "Invalid user ID", http.StatusBadRequest)
+		return
+	}
+	
+	preferences := make(map[string]interface{})
+	
+	// Get survey responses
+	var primaryInterest, whyHere, professionalBackground sql.NullString
+	err = h.db.QueryRow(`
+		SELECT primary_interest, why_here, professional_background
+		FROM survey_responses 
+		WHERE user_id = $1 AND event_id = $2
+	`, userID, eventID).Scan(&primaryInterest, &whyHere, &professionalBackground)
+	
+	if err == nil {
+		preferences["primaryInterest"] = primaryInterest.String
+		preferences["whyHere"] = whyHere.String
+		preferences["professionalBackground"] = professionalBackground.String
+	}
+
+	// Get cocktail preferences
+	var interests []string
+	rows, err := h.db.Query(`
+		SELECT preference_type 
+		FROM cocktail_preferences 
+		WHERE user_id = $1 AND event_id = $2
+	`, userID, eventID)
+	
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var interest string
+			if err := rows.Scan(&interest); err == nil {
+				interests = append(interests, interest)
+			}
+		}
+	}
+	
+	preferences["interests"] = interests
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(preferences)
+}
+
+// CloseRound transitions the session from feedback collection to break
+func (h *VelvetHourHandler) CloseRound(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get active session
+	var sessionID uuid.UUID
+	var currentRound int
+	var totalRounds int
+	err = h.db.QueryRow(`
+		SELECT s.id, s.current_round, e.the_hour_total_rounds
+		FROM velvet_hour_sessions s
+		JOIN events e ON s.event_id = e.id
+		WHERE s.event_id = $1 AND s.is_active = true
+	`, eventID).Scan(&sessionID, &currentRound, &totalRounds)
+	
+	if err != nil {
+		http.Error(w, "No active session", http.StatusBadRequest)
+		return
+	}
+
+	// Check if this is the last round
+	if currentRound >= totalRounds {
+		// Final round - end session
+		_, err = h.db.Exec(`
+			UPDATE velvet_hour_sessions 
+			SET status = 'completed', ended_at = CURRENT_TIMESTAMP, 
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = $1
+		`, sessionID)
+		
+		if err != nil {
+			log.Printf("Failed to complete session: %v", err)
+			http.Error(w, "Failed to complete session", http.StatusInternalServerError)
+			return
+		}
+
+		// Broadcast session ended
+		if h.hub != nil {
+			h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourSessionEnded, map[string]interface{}{
+				"sessionId": sessionID,
+				"reason":    "completed",
+			})
+		}
+	} else {
+		// Not final round - start break
+		var breakDuration int
+		err = h.db.QueryRow(`
+			SELECT the_hour_break_duration
+			FROM events 
+			WHERE id = $1
+		`, eventID).Scan(&breakDuration)
+		
+		if err != nil {
+			log.Printf("Failed to get break duration: %v", err)
+			breakDuration = 5 // Default to 5 minutes
+		}
+
+		breakEnd := time.Now().UTC().Add(time.Duration(breakDuration) * time.Minute)
+		log.Printf("🏁 VelvetHour CloseRound: Starting break for %d minutes, ends at (UTC)=%v", breakDuration, breakEnd)
+
+		// Update session to break status
+		_, err = h.db.Exec(`
+			UPDATE velvet_hour_sessions 
+			SET status = 'break', round_ends_at = $1, 
+				updated_at = CURRENT_TIMESTAMP
+			WHERE id = $2
+		`, breakEnd, sessionID)
+		
+		if err != nil {
+			log.Printf("Failed to start break: %v", err)
+			http.Error(w, "Failed to start break", http.StatusInternalServerError)
+			return
+		}
+
+		// Broadcast status update
+		if h.hub != nil {
+			h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourStatusUpdate, map[string]interface{}{
+				"sessionId":     sessionID,
+				"status":        "break",
+				"currentRound":  currentRound,
+				"breakDuration": breakDuration,
+			})
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }
 
 // Helper function to join strings

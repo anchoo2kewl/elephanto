@@ -14,6 +14,9 @@ export const MESSAGE_TYPES = {
   VELVET_HOUR_SESSION_RESET: 'VELVET_HOUR_SESSION_RESET',
   ATTENDANCE_STATS_UPDATE: 'ATTENDANCE_STATS_UPDATE',
   VELVET_HOUR_STATUS_UPDATE: 'VELVET_HOUR_STATUS_UPDATE',
+  VELVET_HOUR_ADMIN_DRAG_UPDATE: 'VELVET_HOUR_ADMIN_DRAG_UPDATE',
+  VELVET_HOUR_ADMIN_MATCH_UPDATE: 'VELVET_HOUR_ADMIN_MATCH_UPDATE',
+  VELVET_HOUR_AI_MATCHES_GENERATED: 'VELVET_HOUR_AI_MATCHES_GENERATED',
   PING: 'PING',
   PONG: 'PONG',
   ADMIN_DISCONNECT: 'ADMIN_DISCONNECT',
@@ -361,6 +364,22 @@ class WebSocketService {
   setDisconnectCallback(callback: (message: string) => void) {
     this.disconnectCallback = callback;
   }
+
+  // Send message to server
+  sendMessage(type: string, data: any) {
+    if (this.socket?.readyState === WebSocket.OPEN && this.eventId) {
+      const message = {
+        type,
+        eventId: this.eventId,
+        data,
+        timestamp: Date.now()
+      };
+      this.socket.send(JSON.stringify(message));
+      console.log('WebSocket message sent:', message);
+    } else {
+      console.warn('Cannot send message: WebSocket not connected or no eventId');
+    }
+  }
 }
 
 // Create singleton instance
@@ -410,6 +429,7 @@ export function useWebSocket(eventId?: string) {
     isConnected,
     subscribe,
     disconnect: websocketService.disconnect.bind(websocketService),
+    sendMessage: websocketService.sendMessage.bind(websocketService),
     websocketService,
   };
 }

@@ -170,6 +170,7 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/attendance", velvetHourHandler.GetAttendanceStats).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/close-round", velvetHourHandler.CloseRound).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
@@ -178,6 +179,8 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/test-presence-update", velvetHourHandler.TestPresenceUpdate).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/generate-ai-matches", velvetHourHandler.GenerateAIMatches).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/user/{userId}/preferences", velvetHourHandler.GetUserPreferences).Methods("GET")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
@@ -380,6 +383,7 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/attendance", velvetHourHandler.GetAttendanceStats).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start", velvetHourHandler.StartSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/start-round", velvetHourHandler.StartRound).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/close-round", velvetHourHandler.CloseRound).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
@@ -388,6 +392,8 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/test-presence-update", velvetHourHandler.TestPresenceUpdate).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/generate-ai-matches", velvetHourHandler.GenerateAIMatches).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/user/{userId}/preferences", velvetHourHandler.GetUserPreferences).Methods("GET")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")

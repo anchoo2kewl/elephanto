@@ -55,6 +55,10 @@ type VelvetHourMatch struct {
 	// Joined user information
 	User1Name string `json:"user1Name" db:"user1_name"`
 	User2Name string `json:"user2Name" db:"user2_name"`
+	
+	// Feedback status (not stored in DB, populated by queries)
+	User1FeedbackSubmitted bool `json:"user1FeedbackSubmitted"`
+	User2FeedbackSubmitted bool `json:"user2FeedbackSubmitted"`
 }
 
 // VelvetHourFeedback represents feedback from one user about another

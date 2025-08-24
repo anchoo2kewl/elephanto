@@ -1,95 +1,39 @@
 import React from 'react';
 import { VelvetHourRoundProps } from '@/types/velvet-hour';
+import { VelvetHourTimeline } from './VelvetHourTimeline';
+import { VelvetHourTimer } from './VelvetHourTimer';
 
 export const VelvetHourRound: React.FC<VelvetHourRoundProps> = ({
   match,
   timeLeft,
   currentRound,
   totalRounds,
-  currentUserId
+  currentUserId,
+  roundDuration = 10 // Default to 10 minutes if not provided
 }) => {
   const partnerName = match.user1Id === currentUserId ? match.user2Name : match.user1Name;
-  const minutes = Math.floor(timeLeft / 60);
-  const seconds = timeLeft % 60;
-
-  // Calculate progress percentage (assuming 10 minute rounds)
-  const totalRoundTime = 10 * 60; // 10 minutes in seconds
-  const progress = ((totalRoundTime - timeLeft) / totalRoundTime) * 100;
+  
+  // Calculate total round time in seconds
+  const totalRoundTime = roundDuration * 60; // Convert minutes to seconds
   const isUrgent = timeLeft <= 60; // Last minute
   const isWarning = timeLeft <= 180; // Last 3 minutes
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center px-4">
       <div className="text-center text-white max-w-lg mx-auto">
-        {/* Round indicator */}
-        <div className="mb-6">
-          <div className="flex justify-center items-center space-x-2 mb-2">
-            {Array.from({ length: totalRounds }, (_, i) => (
-              <div
-                key={i}
-                className={`
-                  w-3 h-3 rounded-full
-                  ${i < currentRound ? 'bg-green-400' : 'bg-white/30'}
-                `}
-              />
-            ))}
-          </div>
-          <p className="text-sm text-white/70">
-            Round {currentRound} of {totalRounds}
-          </p>
-        </div>
+        {/* Timeline showing progress through rounds */}
+        <VelvetHourTimeline 
+          currentRound={currentRound} 
+          totalRounds={totalRounds}
+          showOnlyDuringRounds={true}
+        />
 
-        {/* Timer - large and prominent */}
-        <div className="mb-8">
-          <div className={`
-            w-64 h-64 mx-auto rounded-full flex items-center justify-center
-            bg-gradient-to-br border-8 shadow-2xl
-            ${isUrgent 
-              ? 'from-red-500 to-red-700 border-red-300 animate-pulse' 
-              : isWarning 
-                ? 'from-yellow-500 to-orange-600 border-yellow-300' 
-                : 'from-blue-500 to-blue-700 border-blue-300'
-            }
-          `}>
-            <div className="text-center">
-              <div className={`
-                text-6xl font-mono font-bold mb-2
-                ${isUrgent ? 'animate-pulse' : ''}
-              `}>
-                {minutes}:{seconds.toString().padStart(2, '0')}
-              </div>
-              <div className="text-sm opacity-80">
-                {isUrgent ? 'FINAL MINUTE!' : isWarning ? 'WRAPPING UP' : 'TIME LEFT'}
-              </div>
-            </div>
-          </div>
-
-          {/* Progress ring */}
-          <div className="relative w-72 h-72 mx-auto -mt-68 pointer-events-none">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="transparent"
-                stroke="rgba(255,255,255,0.1)"
-                strokeWidth="2"
-              />
-              <circle
-                cx="50"
-                cy="50"
-                r="45"
-                fill="transparent"
-                stroke={isUrgent ? "#ef4444" : isWarning ? "#f59e0b" : "#3b82f6"}
-                strokeWidth="3"
-                strokeDasharray={`${2 * Math.PI * 45}`}
-                strokeDashoffset={`${2 * Math.PI * 45 * (1 - progress / 100)}`}
-                className="transition-all duration-1000 ease-linear"
-                strokeLinecap="round"
-              />
-            </svg>
-          </div>
-        </div>
+        {/* Timer with integrated progress ring */}
+        <VelvetHourTimer 
+          timeLeft={timeLeft}
+          totalTime={totalRoundTime}
+          title="TIME LEFT"
+        />
 
         {/* Partner info and conversation prompts */}
         <div className="mb-8">

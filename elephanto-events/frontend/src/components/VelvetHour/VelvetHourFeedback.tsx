@@ -28,7 +28,7 @@ export const VelvetHourFeedback: React.FC<VelvetHourFeedbackProps> = ({
   const isFormValid = wantToConnect !== null && feedbackReason;
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4">
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center px-4">
       <div className="text-center text-white max-w-lg mx-auto">
         {/* Header */}
         <div className="mb-8">

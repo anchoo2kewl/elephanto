@@ -40,6 +40,9 @@ export const velvetHourApi = {
   startRound: (eventId: string, data?: StartRoundRequest) => 
     api.post(`/admin/events/${eventId}/velvet-hour/start-round`, data || {}),
     
+  closeRound: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/close-round`),
+    
   endSession: (eventId: string) => 
     api.post(`/admin/events/${eventId}/velvet-hour/end`),
     
@@ -60,4 +63,10 @@ export const velvetHourApi = {
     
   getWebSocketConnectionInfo: (eventId: string) => 
     api.get(`/admin/events/${eventId}/velvet-hour/connection-info`),
+    
+  generateAIMatches: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/generate-ai-matches`),
+    
+  getUserPreferences: (eventId: string, userId: string) => 
+    api.get(`/admin/events/${eventId}/user/${userId}/preferences`),
 };
