@@ -226,11 +226,13 @@ func (h *VelvetHourHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 
 // JoinSession allows a user to join the current Velvet Hour session
 func (h *VelvetHourHandler) JoinSession(w http.ResponseWriter, r *http.Request) {
+	log.Printf("DEBUG: JoinSession called")
 	user, ok := middleware.GetUserFromContext(r)
 	if !ok {
 		http.Error(w, "User not found", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("DEBUG: User found: %s (%s)", user.Name, user.ID)
 
 	// Check if user is attending the active event
 	var eventID uuid.UUID
@@ -286,6 +288,16 @@ func (h *VelvetHourHandler) JoinSession(w http.ResponseWriter, r *http.Request) 
 			"userEmail": user.Email,
 			"sessionId": sessionID,
 		})
+		
+		// Also broadcast attendance stats update to admin users
+		// Get current present user count for real-time admin dashboard updates
+		presentCount := h.hub.GetPresentUserCount(eventID)
+		h.hub.BroadcastToAdmins(eventID, services.MessageTypeAttendanceStatsUpdate, map[string]interface{}{
+			"presentCount": presentCount,
+			"eventId":      eventID,
+			"type":         "presence_update",
+		})
+		log.Printf("DEBUG: Broadcasted attendance stats update after Velvet Hour join - presentCount: %d for event: %s", presentCount, eventID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1132,10 +1144,10 @@ func (h *VelvetHourHandler) ResetSession(w http.ResponseWriter, r *http.Request)
 	}
 	defer tx.Rollback()
 
-	// Get session ID first
+	// Get active session ID first
 	var sessionID uuid.UUID
 	err = tx.QueryRow(`
-		SELECT id FROM velvet_hour_sessions WHERE event_id = $1
+		SELECT id FROM velvet_hour_sessions WHERE event_id = $1 AND is_active = true
 	`, eventID).Scan(&sessionID)
 	
 	// If no session exists, that's fine - nothing to reset
@@ -1205,14 +1217,24 @@ func (h *VelvetHourHandler) ResetSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Broadcast status update after reset
+	// Broadcast session reset to all participants and admins
 	if h.hub != nil {
-		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourStatusUpdate, map[string]interface{}{
+		// Broadcast session reset notification to all users
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourSessionReset, map[string]interface{}{
+			"eventId": eventID,
+			"message": "The admin has reset the Velvet Hour session. Please refresh your page and rejoin if you'd like to participate.",
+			"timestamp": time.Now().Unix(),
+		})
+		
+		// Also broadcast status update for admins
+		h.hub.BroadcastToAdmins(eventID, services.MessageTypeVelvetHourStatusUpdate, map[string]interface{}{
 			"eventId":        eventID,
 			"status":         "reset",
 			"sessionActive":  false,
 			"theHourStarted": false,
 		})
+		
+		log.Printf("Broadcasted session reset for event %s", eventID)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -1458,6 +1480,38 @@ func (h *VelvetHourHandler) GetWebSocketConnections(w http.ResponseWriter, r *ht
 		
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(connectionInfo)
+	} else {
+		http.Error(w, "WebSocket hub not available", http.StatusInternalServerError)
+	}
+}
+
+// TestPresenceUpdate manually triggers a presence update broadcast for testing
+func (h *VelvetHourHandler) TestPresenceUpdate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	
+	if h.hub != nil {
+		presentCount := h.hub.GetPresentUserCount(eventID)
+		log.Printf("DEBUG TestPresenceUpdate: Manual test - eventID: %s, presentCount: %d", eventID, presentCount)
+		
+		h.hub.BroadcastToAdmins(eventID, services.MessageTypeAttendanceStatsUpdate, map[string]interface{}{
+			"presentCount": presentCount,
+			"eventId":      eventID,
+			"type":         "presence_update",
+		})
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success": true,
+			"message": "Test presence update sent",
+			"presentCount": presentCount,
+		})
 	} else {
 		http.Error(w, "WebSocket hub not available", http.StatusInternalServerError)
 	}

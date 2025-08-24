@@ -1,5 +1,4 @@
 import React from 'react';
-import { api } from './api';
 
 // WebSocket message types (matching backend constants)
 export const MESSAGE_TYPES = {
@@ -12,6 +11,7 @@ export const MESSAGE_TYPES = {
   VELVET_HOUR_MATCH_CONFIRMED: 'VELVET_HOUR_MATCH_CONFIRMED',
   VELVET_HOUR_FEEDBACK_SUBMITTED: 'VELVET_HOUR_FEEDBACK_SUBMITTED',
   VELVET_HOUR_SESSION_ENDED: 'VELVET_HOUR_SESSION_ENDED',
+  VELVET_HOUR_SESSION_RESET: 'VELVET_HOUR_SESSION_RESET',
   ATTENDANCE_STATS_UPDATE: 'ATTENDANCE_STATS_UPDATE',
   VELVET_HOUR_STATUS_UPDATE: 'VELVET_HOUR_STATUS_UPDATE',
   PING: 'PING',
@@ -39,7 +39,7 @@ class WebSocketService {
   private eventId: string | null = null;
   private isConnecting = false;
   private isAuthenticated = false;
-  private heartbeatInterval: NodeJS.Timeout | null = null;
+  private heartbeatInterval: number | null = null;
   private readonly HEARTBEAT_INTERVAL = 10000; // 10 seconds
   private disconnectCallback: ((message: string) => void) | null = null;
   private adminDisconnected = false; // Flag to prevent auto-reconnection after admin disconnect

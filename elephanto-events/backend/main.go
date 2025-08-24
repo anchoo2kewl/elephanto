@@ -177,6 +177,7 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/present-users", velvetHourHandler.GetPresentUsers).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/test-presence-update", velvetHourHandler.TestPresenceUpdate).Methods("POST")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
@@ -386,6 +387,7 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/present-users", velvetHourHandler.GetPresentUsers).Methods("GET")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/test-presence-update", velvetHourHandler.TestPresenceUpdate).Methods("POST")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")

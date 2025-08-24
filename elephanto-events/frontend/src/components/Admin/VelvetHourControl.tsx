@@ -272,6 +272,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
   };
 
   const [showClearDialog, setShowClearDialog] = useState(false);
+  const [showResetDialog, setShowResetDialog] = useState(false);
 
   const handleClearConnections = async () => {
     setShowClearDialog(false);
@@ -289,6 +290,19 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
     }
   };
 
+  const handleResetSession = async () => {
+    setShowResetDialog(false);
+    
+    try {
+      // Call the parent's reset handler which will handle the API call and WebSocket broadcasts
+      if (onResetSession) {
+        onResetSession();
+      }
+    } catch (error) {
+      console.error('Failed to reset session:', error);
+    }
+  };
+
   // Handle escape key for modals
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -302,61 +316,72 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
         if (showClearDialog) {
           setShowClearDialog(false);
         }
+        if (showResetDialog) {
+          setShowResetDialog(false);
+        }
       }
     };
 
     document.addEventListener('keydown', handleEscape);
     return () => document.removeEventListener('keydown', handleEscape);
-  }, [showAttendingModal, showPresentModal, showClearDialog]);
+  }, [showAttendingModal, showPresentModal, showClearDialog, showResetDialog]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6 p-3 sm:p-6 bg-white/10 rounded-xl border border-white/20">
       {/* Header */}
-      <div className="flex justify-between items-start">
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-2">Velvet Hour Control</h2>
-          <div className="flex items-center space-x-4 text-white/70 mb-2">
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4" />
-              <span className="font-medium">{eventTitle}</span>
+      <div className="mb-6">
+        <div className="flex flex-col lg:flex-row lg:justify-between lg:items-start gap-4">
+          <div className="flex-1">
+            <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Velvet Hour Control</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-white/70 mb-2">
+              <div className="flex items-center space-x-2">
+                <Calendar className="h-4 w-4" />
+                <span className="font-medium text-sm">{eventTitle}</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Clock className="h-4 w-4" />
+                <span className="text-sm">{new Date(eventDate).toLocaleDateString()} at {eventTime}</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+                <span className="text-xs">{isConnected ? 'Live' : 'Offline'}</span>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Clock className="h-4 w-4" />
-              <span>{new Date(eventDate).toLocaleDateString()} at {eventTime}</span>
-            </div>
-            <div className="flex items-center space-x-1">
-              <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
-              <span className="text-xs">{isConnected ? 'Live' : 'Offline'}</span>
-            </div>
+            <p className="text-white/60 text-sm">
+              Manage the interactive matching experience for attendees
+            </p>
           </div>
-          <p className="text-white/60 text-sm">
-            Manage the interactive matching experience for attendees
-          </p>
-        </div>
-        <div className="flex items-center space-x-2">
-          {status.session && onResetSession && (
+          
+          {/* Control Buttons - Stack on mobile, inline on larger screens */}
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-2 lg:flex-nowrap">
+            {status.session && onResetSession && (
+              <button
+                onClick={() => setShowResetDialog(true)}
+                className="flex items-center justify-center space-x-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded-lg border border-red-400/30 transition-all duration-200 text-sm whitespace-nowrap"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span className="hidden sm:inline">Reset Session</span>
+                <span className="sm:hidden">Reset</span>
+              </button>
+            )}
             <button
-              onClick={onResetSession}
-              className="flex items-center space-x-2 px-4 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded-lg border border-red-400/30 transition-all duration-200"
+              onClick={() => setShowConfig(!showConfig)}
+              className="flex items-center justify-center space-x-2 px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-all duration-200 text-sm whitespace-nowrap"
             >
-              <RotateCcw className="h-4 w-4" />
-              <span>Reset Session</span>
+              <Settings className="h-4 w-4" />
+              <span className="hidden sm:inline">Settings</span>
+              <span className="sm:hidden">Config</span>
             </button>
-          )}
-          <button
-            onClick={() => setShowConfig(!showConfig)}
-            className="flex items-center space-x-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-lg border border-white/20 transition-all duration-200"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Settings</span>
-          </button>
-          <button
-            onClick={() => setShowClearDialog(true)}
-            className="flex items-center space-x-3 px-6 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded-lg border border-red-400/30 transition-all duration-200 font-semibold"
-          >
-            <WifiOff className="h-5 w-5" />
-            <span>⚠️ Disconnect All Users</span>
-          </button>
+            <button
+              onClick={() => setShowClearDialog(true)}
+              className="flex items-center justify-center space-x-2 px-3 py-2 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded-lg border border-red-400/30 transition-all duration-200 font-semibold text-sm whitespace-nowrap"
+            >
+              <WifiOff className="h-4 w-4" />
+              <span className="hidden md:inline">⚠️ Disconnect All Users</span>
+              <span className="hidden sm:inline md:hidden">Disconnect All</span>
+              <span className="sm:hidden">Disconnect</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -364,7 +389,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       {showConfig && (
         <div className="bg-white/10 rounded-xl p-6 border border-white/20">
           <h3 className="text-lg font-semibold text-white mb-4">Velvet Hour Configuration</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm text-white/70 mb-2">Round Duration (minutes)</label>
               <input
@@ -412,16 +437,16 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
               </p>
             </div>
           </div>
-          <div className="flex space-x-3">
+          <div className="flex flex-col sm:flex-row gap-3">
             <button
               onClick={handleUpdateConfig}
-              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors duration-200"
+              className="px-4 py-2 bg-green-600 hover:bg-green-500 text-white rounded-lg transition-colors duration-200 text-sm"
             >
               Save Configuration
             </button>
             <button
               onClick={() => setShowConfig(false)}
-              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors duration-200"
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors duration-200 text-sm"
             >
               Cancel
             </button>
@@ -430,7 +455,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       )}
 
       {/* Session Status */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white/10 rounded-xl p-6 border border-white/20">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold text-white">Session Status</h3>
@@ -482,7 +507,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             <Users className="h-5 w-5 text-blue-400" />
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             <button 
               onClick={handleShowAttendingUsers}
               className="text-center bg-white/5 hover:bg-white/10 rounded-lg p-3 transition-all duration-200"
@@ -520,14 +545,14 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       )}
 
       {/* Control Buttons */}
-      <div className="flex flex-wrap gap-4">
+      <div className="flex flex-col sm:flex-row sm:flex-wrap gap-3 sm:gap-4">
         {!status.session && (
           <div className="flex flex-col">
             <button
               onClick={onStartSession}
               disabled={!attendanceStats?.canStart}
               className={`
-                flex items-center space-x-2 px-6 py-3 rounded-lg font-semibold
+                flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap
                 ${attendanceStats?.canStart
                   ? 'bg-green-600 hover:bg-green-500 text-white'
                   : 'bg-gray-600 cursor-not-allowed text-gray-300'
@@ -553,7 +578,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
           <>
             <button
               onClick={handleStartRound}
-              className="flex items-center space-x-2 px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold transition-colors duration-200"
+              className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
             >
               <Play className="h-4 w-4" />
               <span>Start Next Round</span>
@@ -561,7 +586,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             
             <button
               onClick={() => setShowMatchmaking(!showMatchmaking)}
-              className="flex items-center space-x-2 px-6 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold transition-colors duration-200"
+              className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
             >
               <Target className="h-4 w-4" />
               <span>Custom Matches</span>
@@ -572,7 +597,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
         {status.session && (
           <button
             onClick={onEndSession}
-            className="flex items-center space-x-2 px-6 py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-colors duration-200"
+            className="flex items-center justify-center space-x-2 px-4 sm:px-6 py-2 sm:py-3 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold text-sm sm:text-base whitespace-nowrap transition-colors duration-200"
           >
             <Square className="h-4 w-4" />
             <span>End Session</span>
@@ -591,17 +616,17 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             onMatchesChange={setManualMatches}
             maxMatches={maxMatches}
           />
-          <div className="flex justify-between items-center mt-4">
-            <p className="text-sm text-white/70">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 mt-4">
+            <p className="text-sm text-white/70 text-center sm:text-left">
               {manualMatches.length} of {maxMatches} possible matches created
             </p>
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => {
                   setShowMatchmaking(false);
                   setManualMatches([]);
                 }}
-                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors duration-200"
+                className="px-4 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors duration-200 text-sm"
               >
                 Cancel
               </button>
@@ -791,18 +816,55 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
               This will immediately disconnect all users from the WebSocket connection. 
               They will receive a notification and need to refresh their page to reconnect.
             </p>
-            <div className="flex space-x-3">
+            <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={() => setShowClearDialog(false)}
-                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-all duration-200"
+                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-all duration-200 text-sm"
               >
                 Cancel
               </button>
               <button
                 onClick={handleClearConnections}
-                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all duration-200"
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all duration-200 text-sm"
               >
                 Disconnect All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reset Session Confirmation Dialog */}
+      {showResetDialog && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowResetDialog(false);
+            }
+          }}
+        >
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-red-400/30">
+            <div className="flex items-center space-x-3 mb-4">
+              <RotateCcw className="h-6 w-6 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">Reset Session</h3>
+            </div>
+            <p className="text-white/80 mb-6">
+              This will permanently reset the entire Velvet Hour session, clearing all matches, rounds, and feedback. 
+              All participants will be moved back to the joining page and notified of the reset. This action cannot be undone.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={() => setShowResetDialog(false)}
+                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-all duration-200 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleResetSession}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all duration-200 text-sm"
+              >
+                Reset Session
               </button>
             </div>
           </div>

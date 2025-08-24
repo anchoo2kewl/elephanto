@@ -14,6 +14,7 @@ import {
 import { VelvetHourControl } from '@/components/Admin/VelvetHourControl';
 import { velvetHourApi } from '@/services/velvetHourApi';
 import { AdminVelvetHourStatusResponse } from '@/types/velvet-hour';
+import { useWebSocket, MESSAGE_TYPES } from '@/services/websocket';
 
 interface UserDetails {
   id: string;
@@ -654,12 +655,6 @@ export const Admin: React.FC = () => {
   const handleVelvetHourResetSession = async () => {
     if (!activeEvent?.id) return;
     
-    const confirmed = confirm(
-      'Are you sure you want to reset the Velvet Hour session? This will permanently delete all session data, matches, and feedback. This action cannot be undone.'
-    );
-    
-    if (!confirmed) return;
-    
     try {
       await velvetHourApi.resetSession(activeEvent.id);
       await loadVelvetHourStatus();
@@ -682,6 +677,51 @@ export const Admin: React.FC = () => {
       }
     }
   }, [activeTab, events, loadVelvetHourStatus]);
+
+  // WebSocket connection and message handlers for Velvet Hour real-time updates
+  const { isConnected, subscribe } = useWebSocket(
+    activeTab === 'velvet-hour' ? activeEvent?.id : undefined
+  );
+
+  useEffect(() => {
+    if (activeTab === 'velvet-hour' && activeEvent?.id && isConnected) {
+      // Subscribe to participant joined events to refresh status
+      const unsubscribeParticipantJoined = subscribe(MESSAGE_TYPES.VELVET_HOUR_PARTICIPANT_JOINED, (data) => {
+        console.log('🔄 Admin: Participant joined, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus(); // Refresh the full admin status including participants list
+      });
+
+      // Subscribe to session events to refresh status
+      const unsubscribeSessionStarted = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_STARTED, (data) => {
+        console.log('🔄 Admin: Session started, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus();
+      });
+
+      const unsubscribeSessionEnded = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_ENDED, (data) => {
+        console.log('🔄 Admin: Session ended, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus();
+      });
+
+      const unsubscribeRoundStarted = subscribe(MESSAGE_TYPES.VELVET_HOUR_ROUND_STARTED, (data) => {
+        console.log('🔄 Admin: Round started, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus();
+      });
+
+      const unsubscribeSessionReset = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_RESET, (data) => {
+        console.log('🔄 Admin: Session reset, refreshing Velvet Hour status:', data);
+        loadVelvetHourStatus();
+      });
+
+      // Cleanup function
+      return () => {
+        unsubscribeParticipantJoined();
+        unsubscribeSessionStarted();
+        unsubscribeSessionEnded();
+        unsubscribeRoundStarted();
+        unsubscribeSessionReset();
+      };
+    }
+  }, [activeTab, activeEvent?.id, isConnected, subscribe, loadVelvetHourStatus]);
 
   const stats = [
     { label: 'Total Users', value: users.length.toString(), icon: Users },

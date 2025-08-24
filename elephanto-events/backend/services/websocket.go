@@ -22,6 +22,7 @@ const (
 	MessageTypeVelvetHourMatchConfirmed   = "VELVET_HOUR_MATCH_CONFIRMED"
 	MessageTypeVelvetHourFeedbackSubmitted = "VELVET_HOUR_FEEDBACK_SUBMITTED"
 	MessageTypeVelvetHourSessionEnded     = "VELVET_HOUR_SESSION_ENDED"
+	MessageTypeVelvetHourSessionReset     = "VELVET_HOUR_SESSION_RESET"
 	MessageTypeAttendanceStatsUpdate      = "ATTENDANCE_STATS_UPDATE"
 	MessageTypeVelvetHourStatusUpdate     = "VELVET_HOUR_STATUS_UPDATE"
 	MessageTypePing                       = "PING"
@@ -61,6 +62,10 @@ type Hub struct {
 	// Channel to broadcast messages
 	Broadcast chan WebSocketMessage
 
+	// Debounced presence update tracking
+	presenceUpdateTimers map[uuid.UUID]*time.Timer
+	presenceUpdateMutex  sync.Mutex
+
 	// Mutex for thread-safe operations
 	mutex sync.RWMutex
 }
@@ -68,17 +73,18 @@ type Hub struct {
 // NewWebSocketHub creates a new WebSocket hub
 func NewWebSocketHub() *Hub {
 	return &Hub{
-		Rooms:      make(map[uuid.UUID]map[uuid.UUID]*Client),
-		Register:   make(chan *Client),
-		Unregister: make(chan *Client),
-		Broadcast:  make(chan WebSocketMessage),
+		Rooms:                make(map[uuid.UUID]map[uuid.UUID]*Client),
+		Register:             make(chan *Client),
+		Unregister:           make(chan *Client),
+		Broadcast:            make(chan WebSocketMessage),
+		presenceUpdateTimers: make(map[uuid.UUID]*time.Timer),
 	}
 }
 
 // Run starts the WebSocket hub
 func (h *Hub) Run() {
-	// Create a ticker to check for stale connections every 30 seconds
-	heartbeatTicker := time.NewTicker(30 * time.Second)
+	// Create a ticker to check for stale connections every 60 seconds (increased from 30s)
+	heartbeatTicker := time.NewTicker(60 * time.Second)
 	defer heartbeatTicker.Stop()
 	
 	for {
@@ -113,6 +119,7 @@ func (h *Hub) registerClient(client *Client) {
 	
 	// Broadcast presence update to admins
 	presentCount := h.getPresentUserCountLocked(client.EventID)
+	log.Printf("DEBUG: About to broadcast presence update - eventID: %s, presentCount: %d", client.EventID, presentCount)
 	h.broadcastPresenceUpdate(client.EventID, presentCount)
 }
 
@@ -307,25 +314,37 @@ func (h *Hub) getPresentUserCountLocked(eventID uuid.UUID) int {
 	return count
 }
 
-// broadcastPresenceUpdate sends a presence update to admins (call without mutex lock)
+// broadcastPresenceUpdate sends a debounced presence update to admins
 func (h *Hub) broadcastPresenceUpdate(eventID uuid.UUID, presentCount int) {
+	h.presenceUpdateMutex.Lock()
+	defer h.presenceUpdateMutex.Unlock()
+	
+	// Cancel any existing timer for this event
+	if timer, exists := h.presenceUpdateTimers[eventID]; exists {
+		timer.Stop()
+	}
+	
 	// Log current connections for debugging
 	h.logCurrentConnections(eventID)
 	
-	// Use goroutine to avoid blocking since we're already holding the mutex
-	// Add a small delay to ensure frontend has time to set up WebSocket subscriptions
-	go func() {
-		// Small delay to prevent race conditions with frontend subscription setup
-		time.Sleep(100 * time.Millisecond)
+	// Create a new debounced timer (500ms delay to reduce noise)
+	h.presenceUpdateTimers[eventID] = time.AfterFunc(500*time.Millisecond, func() {
+		// Get fresh count when the timer fires
+		freshCount := h.GetPresentUserCount(eventID)
 		
 		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
-			"presentCount": presentCount,
+			"presentCount": freshCount,
 			"eventId":      eventID,
 			"type":         "presence_update",
 		})
 		
-		log.Printf("DEBUG: Broadcasted presence update - presentCount: %d to admins for event %s", presentCount, eventID)
-	}()
+		log.Printf("DEBUG: Debounced presence update sent - presentCount: %d to admins for event %s", freshCount, eventID)
+		
+		// Clean up the timer
+		h.presenceUpdateMutex.Lock()
+		delete(h.presenceUpdateTimers, eventID)
+		h.presenceUpdateMutex.Unlock()
+	})
 }
 
 // logCurrentConnections logs all current connections for debugging
@@ -363,7 +382,7 @@ func (h *Hub) checkStaleConnections() {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	
-	timeout := 30 * time.Second // 30 seconds timeout (3 missed 10-second heartbeats)
+	timeout := 90 * time.Second // 90 seconds timeout (9 missed 10-second heartbeats, increased from 30s)
 	now := time.Now()
 	var staleClients []*Client
 	
@@ -559,22 +578,6 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, eventID uu
 
 	// Register client
 	h.Register <- client
-
-	// Send an immediate presence update after connection is fully established
-	// This helps ensure admin dashboards update immediately
-	go func() {
-		// Wait a moment for registration to complete
-		time.Sleep(200 * time.Millisecond)
-		
-		presentCount := h.GetPresentUserCount(eventID)
-		log.Printf("DEBUG: Sending immediate post-connection presence update - count: %d for event: %s", presentCount, eventID)
-		
-		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
-			"presentCount": presentCount,
-			"eventId":      eventID,
-			"type":         "presence_update",
-		})
-	}()
 
 	// Start goroutines for reading and writing
 	go h.writePump(client)

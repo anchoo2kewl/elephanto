@@ -86,6 +86,18 @@ export const VelvetHour: React.FC = () => {
       checkStatus(); // Refresh to show completed state
     });
 
+    const unsubscribeSessionReset = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_RESET, (data) => {
+      console.log('Velvet Hour session reset by admin:', data);
+      // Show admin reset notification
+      showToast(data.message || 'The Velvet Hour session has been reset by an admin. Please refresh and rejoin.', 'error');
+      // Reset to initial state and force status check
+      setGameState('loading');
+      setStatus(null);
+      setTimeout(() => {
+        checkStatus(); // Refresh after short delay to show reset state
+      }, 1000);
+    });
+
     const unsubscribeParticipantJoined = subscribe(MESSAGE_TYPES.VELVET_HOUR_PARTICIPANT_JOINED, (data) => {
       console.log('New participant joined:', data);
       // Show notification that someone joined
@@ -106,6 +118,7 @@ export const VelvetHour: React.FC = () => {
       unsubscribeMatchConfirmed();
       unsubscribeFeedbackSubmitted();
       unsubscribeSessionEnded();
+      unsubscribeSessionReset();
       unsubscribeParticipantJoined();
       unsubscribeStatusUpdate();
     };

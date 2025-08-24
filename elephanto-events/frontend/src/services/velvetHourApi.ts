@@ -28,7 +28,7 @@ export const velvetHourApi = {
   getAttendanceStats: (eventId: string) => 
     api.get<{
       attendingCount: number;
-      requiredCount: number;
+      presentCount: number;
       minParticipants: number;
       canStart: boolean;
       alreadyStarted: boolean;
