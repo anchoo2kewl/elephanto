@@ -146,7 +146,7 @@ const AppRoutes: React.FC = () => {
         } 
       />
       <Route 
-        path="/admin" 
+        path="/admin/*" 
         element={
           <ProtectedRoute adminOnly>
             <Layout>

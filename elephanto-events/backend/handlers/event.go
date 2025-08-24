@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"elephanto-events/middleware"
 	"elephanto-events/models"
+	"elephanto-events/services"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,11 +16,17 @@ import (
 )
 
 type EventHandler struct {
-	db *sql.DB
+	db  *sql.DB
+	hub *services.Hub
 }
 
 func NewEventHandler(db *sql.DB) *EventHandler {
 	return &EventHandler{db: db}
+}
+
+// SetWebSocketHub sets the WebSocket hub for broadcasting messages
+func (h *EventHandler) SetWebSocketHub(hub *services.Hub) {
+	h.hub = hub
 }
 
 // GetActiveEvent returns the currently active event for public consumption
@@ -27,7 +34,7 @@ func (h *EventHandler) GetActiveEvent(w http.ResponseWriter, r *http.Request) {
 	var event models.Event
 	err := h.db.QueryRow(`
 		SELECT id, title, tagline, date, time, entry_time, location, address, attire, age_range, 
-		       description, is_active, ticket_url, google_maps_enabled, countdown_enabled, 
+		       description, is_active, ticket_url, google_maps_enabled, map_provider, countdown_enabled, 
 		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date, the_hour_available,
 		       created_at, updated_at, created_by
 		FROM events 
@@ -35,7 +42,7 @@ func (h *EventHandler) GetActiveEvent(w http.ResponseWriter, r *http.Request) {
 	`).Scan(
 		&event.ID, &event.Title, &event.Tagline, &event.Date, &event.Time, &event.EntryTime,
 		&event.Location, &event.Address, &event.Attire, &event.AgeRange, &event.Description,
-		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.CountdownEnabled,
+		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.MapProvider, &event.CountdownEnabled,
 		&event.CocktailSelectionEnabled, &event.SurveyEnabled, &event.TheHourEnabled,
 		&event.TheHourActiveDate, &event.TheHourAvailable, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
 	)
@@ -79,7 +86,7 @@ func (h *EventHandler) GetActiveEvent(w http.ResponseWriter, r *http.Request) {
 func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.db.Query(`
 		SELECT id, title, tagline, date, time, entry_time, location, address, attire, age_range, 
-		       description, is_active, ticket_url, google_maps_enabled, countdown_enabled, 
+		       description, is_active, ticket_url, google_maps_enabled, map_provider, countdown_enabled, 
 		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date, the_hour_available,
 		       created_at, updated_at, created_by
 		FROM events 
@@ -97,7 +104,7 @@ func (h *EventHandler) GetEvents(w http.ResponseWriter, r *http.Request) {
 		err := rows.Scan(
 			&event.ID, &event.Title, &event.Tagline, &event.Date, &event.Time, &event.EntryTime,
 			&event.Location, &event.Address, &event.Attire, &event.AgeRange, &event.Description,
-			&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.CountdownEnabled,
+			&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.MapProvider, &event.CountdownEnabled,
 			&event.CocktailSelectionEnabled, &event.SurveyEnabled, &event.TheHourEnabled,
 			&event.TheHourActiveDate, &event.TheHourAvailable, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
 		)
@@ -124,7 +131,7 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	var event models.Event
 	err = h.db.QueryRow(`
 		SELECT id, title, tagline, date, time, entry_time, location, address, attire, age_range, 
-		       description, is_active, ticket_url, google_maps_enabled, countdown_enabled, 
+		       description, is_active, ticket_url, google_maps_enabled, map_provider, countdown_enabled, 
 		       cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date, the_hour_available,
 		       created_at, updated_at, created_by
 		FROM events 
@@ -132,7 +139,7 @@ func (h *EventHandler) GetEvent(w http.ResponseWriter, r *http.Request) {
 	`, eventID).Scan(
 		&event.ID, &event.Title, &event.Tagline, &event.Date, &event.Time, &event.EntryTime,
 		&event.Location, &event.Address, &event.Attire, &event.AgeRange, &event.Description,
-		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.CountdownEnabled,
+		&event.IsActive, &event.TicketURL, &event.GoogleMapsEnabled, &event.MapProvider, &event.CountdownEnabled,
 		&event.CocktailSelectionEnabled, &event.SurveyEnabled, &event.TheHourEnabled,
 		&event.TheHourActiveDate, &event.TheHourAvailable, &event.CreatedAt, &event.UpdatedAt, &event.CreatedBy,
 	)
@@ -193,17 +200,23 @@ func (h *EventHandler) CreateEvent(w http.ResponseWriter, r *http.Request) {
 
 	eventID := uuid.New()
 
+	// Set default map provider if not provided
+	mapProvider := "google"
+	if req.MapProvider != nil {
+		mapProvider = *req.MapProvider
+	}
+
 	// Insert event
 	_, err = h.db.Exec(`
 		INSERT INTO events (
 			id, title, tagline, date, time, entry_time, location, address, attire, age_range,
-			description, ticket_url, google_maps_enabled, countdown_enabled,
+			description, ticket_url, google_maps_enabled, map_provider, countdown_enabled,
 			cocktail_selection_enabled, survey_enabled, the_hour_enabled, the_hour_active_date,
 			created_by
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
 	`, eventID, req.Title, req.Tagline, eventDate, req.Time, req.EntryTime, req.Location,
 		req.Address, req.Attire, req.AgeRange, req.Description, req.TicketURL,
-		req.GoogleMapsEnabled, req.CountdownEnabled, req.CocktailSelectionEnabled,
+		req.GoogleMapsEnabled, mapProvider, req.CountdownEnabled, req.CocktailSelectionEnabled,
 		req.SurveyEnabled, req.TheHourEnabled, req.TheHourActiveDate, admin.ID)
 
 	if err != nil {
@@ -301,6 +314,11 @@ func (h *EventHandler) UpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if req.GoogleMapsEnabled != nil {
 		setParts = append(setParts, "google_maps_enabled = $"+strconv.Itoa(argIndex))
 		args = append(args, *req.GoogleMapsEnabled)
+		argIndex++
+	}
+	if req.MapProvider != nil {
+		setParts = append(setParts, "map_provider = $"+strconv.Itoa(argIndex))
+		args = append(args, *req.MapProvider)
 		argIndex++
 	}
 	if req.CountdownEnabled != nil {
@@ -590,6 +608,31 @@ func (h *EventHandler) UpdateUserAttendance(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		http.Error(w, "Failed to update attendance", http.StatusInternalServerError)
 		return
+	}
+
+	// Broadcast attendance update via WebSocket
+	if h.hub != nil {
+		messageType := services.MessageTypeUserMarkedAttending
+		if !req.Attending {
+			// Could add a separate message type for leaving if needed
+			messageType = "USER_UNMARKED_ATTENDING"
+		}
+		
+		h.hub.BroadcastToEvent(activeEventID, messageType, map[string]interface{}{
+			"userId":    user.ID,
+			"userName":  user.Name,
+			"userEmail": user.Email,
+			"attending": req.Attending,
+			"eventId":   activeEventID,
+		})
+		
+		// Also broadcast attendance stats update for admin dashboard
+		h.hub.BroadcastToAdmins(activeEventID, services.MessageTypeAttendanceStatsUpdate, map[string]interface{}{
+			"eventId":   activeEventID,
+			"attending": req.Attending,
+			"userId":    user.ID,
+			"userName":  user.Name,
+		})
 	}
 
 	message := "Attendance updated successfully"

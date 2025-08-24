@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { GlassCard } from '@/components/GlassCard';
 import { adminAPI } from '@/services/api';
 import { eventApi } from '@/services/eventApi';
@@ -54,6 +55,7 @@ interface EventDetails {
   isActive: boolean;
   ticketUrl?: string;
   googleMapsEnabled: boolean;
+  mapProvider?: 'google' | 'openstreetmap';
   countdownEnabled: boolean;
   cocktailSelectionEnabled: boolean;
   surveyEnabled: boolean;
@@ -71,8 +73,29 @@ export const Admin: React.FC = () => {
   const [editingUser, setEditingUser] = useState<UserDetails | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null);
   const [isEventModalOpen, setIsEventModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events' | 'velvet-hour' | 'audit-logs' | 'tokens'>('overview');
+  const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Extract current tab from URL path
+  const getCurrentTab = () => {
+    const path = location.pathname.split('/admin/')[1] || '';
+    switch (path) {
+      case 'users': return 'users';
+      case 'events': return 'events';
+      case 'velvet-hour': return 'velvet-hour';
+      case 'audit-logs': return 'audit-logs';
+      case 'tokens': return 'tokens';
+      default: return 'overview';
+    }
+  };
+  
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'events' | 'velvet-hour' | 'audit-logs' | 'tokens'>(getCurrentTab());
   const [eventModalTab, setEventModalTab] = useState<'basic' | 'details'>('basic');
+  
+  // Sync activeTab with URL changes
+  useEffect(() => {
+    setActiveTab(getCurrentTab());
+  }, [location.pathname]);
   const [eventDetails, setEventDetails] = useState<any[]>([]);
   const [notification, setNotification] = useState<{
     message: string;
@@ -337,6 +360,7 @@ export const Admin: React.FC = () => {
       isActive: false,
       ticketUrl: '',
       googleMapsEnabled: true,
+      mapProvider: 'google' as const,
       countdownEnabled: true,
       cocktailSelectionEnabled: true,
       surveyEnabled: true,
@@ -367,6 +391,7 @@ export const Admin: React.FC = () => {
         description: selectedEvent.description || undefined,
         ticketUrl: selectedEvent.ticketUrl || undefined,
         googleMapsEnabled: selectedEvent.googleMapsEnabled,
+        mapProvider: selectedEvent.mapProvider || 'google',
         countdownEnabled: selectedEvent.countdownEnabled,
         cocktailSelectionEnabled: selectedEvent.cocktailSelectionEnabled,
         surveyEnabled: selectedEvent.surveyEnabled,
@@ -611,7 +636,10 @@ export const Admin: React.FC = () => {
   };
 
   const handleVelvetHourUpdateConfig = async (config: any) => {
-    if (!activeEvent?.id) return;
+    if (!activeEvent?.id) {
+      showNotification('No active event selected', 'error');
+      return;
+    }
     
     try {
       await velvetHourApi.updateConfig(activeEvent.id, config);
@@ -704,7 +732,8 @@ export const Admin: React.FC = () => {
       </GlassCard>
 
       {/* Navigation Tabs */}
-      <div className="flex space-x-4">
+      <div className="overflow-x-auto">
+        <div className="flex space-x-2 md:space-x-4 min-w-max pb-2">
         {[
           { id: 'overview', label: 'Overview', icon: Database },
           { id: 'users', label: 'Users', icon: Users },
@@ -715,17 +744,25 @@ export const Admin: React.FC = () => {
         ].map(({ id, label, icon: Icon }) => (
           <button
             key={id}
-            onClick={() => setActiveTab(id as any)}
-            className={`flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+            onClick={() => {
+              if (id === 'overview') {
+                navigate('/admin');
+              } else {
+                navigate(`/admin/${id}`);
+              }
+            }}
+            className={`flex items-center space-x-1 md:space-x-2 px-2 md:px-4 py-2 rounded-lg transition-all duration-200 text-sm md:text-base ${
               activeTab === id
                 ? 'bg-blue-600/30 text-blue-200 border border-blue-400/50'
                 : 'bg-white/10 text-white/80 hover:bg-white/20'
             }`}
           >
-            <Icon className="h-4 w-4" />
-            <span>{label}</span>
+            <Icon className="h-4 w-4 flex-shrink-0" />
+            <span className="hidden sm:inline whitespace-nowrap">{label}</span>
+            <span className="sm:hidden text-xs">{label.split(' ')[0]}</span>
           </button>
         ))}
+        </div>
       </div>
 
       {/* Overview Tab */}
@@ -768,22 +805,23 @@ export const Admin: React.FC = () => {
       {/* Users Tab */}
       {activeTab === 'users' && (
         <GlassCard className="p-6">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
             <h2 className="text-xl font-semibold text-white">
               User Management 👥
             </h2>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2 sm:space-x-3">
               <button 
                 onClick={handleExportCSV}
                 disabled={exportingCSV}
-                className="flex items-center space-x-2 px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-lg transition-all duration-200 disabled:opacity-50"
+                className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-lg transition-all duration-200 disabled:opacity-50 text-sm sm:text-base"
               >
                 {exportingCSV ? (
                   <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400"></div>
                 ) : (
-                  <Download className="h-4 w-4" />
+                  <Download className="h-4 w-4 flex-shrink-0" />
                 )}
-                <span>{exportingCSV ? 'Exporting...' : 'Export CSV'}</span>
+                <span className="hidden sm:inline">{exportingCSV ? 'Exporting...' : 'Export CSV'}</span>
+                <span className="sm:hidden">CSV</span>
               </button>
               <button 
                 onClick={() => setEditingUser({
@@ -820,15 +858,17 @@ export const Admin: React.FC = () => {
                   updatedAt: ''
                 }
               })}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200"
+                className="flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded-lg transition-all duration-200 text-sm sm:text-base"
               >
-                <Plus className="h-4 w-4" />
-                <span>Add User</span>
+                <Plus className="h-4 w-4 flex-shrink-0" />
+                <span className="hidden sm:inline">Add User</span>
+                <span className="sm:hidden">Add</span>
               </button>
             </div>
           </div>
           
-          <div className="overflow-x-auto pt-12 pb-4">
+          {/* Desktop Table View */}
+          <div className="hidden md:block overflow-x-auto pt-12 pb-4">
             <table className="w-full relative">
               <thead>
                 <tr className="border-b border-white/20">
@@ -978,6 +1018,80 @@ export const Admin: React.FC = () => {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          {/* Mobile Card View */}
+          <div className="md:hidden space-y-4 pt-12">
+            {users.map((user) => (
+              <div key={user.id} className="bg-white/5 backdrop-blur-sm rounded-lg p-4 border border-white/10">
+                <div className="flex justify-between items-start mb-3">
+                  <div>
+                    <div className="text-white font-medium">
+                      {user.name || 'No name'}
+                    </div>
+                    <div className="text-white/60 text-sm">{user.email}</div>
+                  </div>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                    user.role === 'admin'
+                      ? 'bg-purple-500/20 text-purple-200'
+                      : 'bg-blue-500/20 text-blue-200'
+                  }`}>
+                    {user.role === 'admin' ? '👑 Admin' : '👤 User'}
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                  <div>
+                    <div className="text-white/60">Status</div>
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                      user.hasSurvey && user.hasCocktail
+                        ? 'bg-green-500/20 text-green-200'
+                        : user.hasSurvey || user.hasCocktail
+                        ? 'bg-yellow-500/20 text-yellow-200'
+                        : 'bg-red-500/20 text-red-200'
+                    }`}>
+                      {user.hasSurvey && user.hasCocktail 
+                        ? '✅ Complete' 
+                        : user.hasSurvey || user.hasCocktail
+                        ? '🟡 Partial'
+                        : '❌ Incomplete'}
+                    </span>
+                  </div>
+                  <div>
+                    <div className="text-white/60">Attendance</div>
+                    <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${
+                      user.attending
+                        ? 'bg-green-500/20 text-green-200'
+                        : 'bg-gray-500/20 text-gray-300'
+                    }`}>
+                      {user.attending ? '✅ Yes' : '❌ No'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center text-xs">
+                  <div className="text-white/60">
+                    Joined {new Date(user.createdAt).toLocaleDateString()}
+                  </div>
+                  <div className="flex space-x-1">
+                    <button
+                      onClick={() => setSelectedUser(user.id)}
+                      className="p-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded transition-all duration-200"
+                      title="View Details"
+                    >
+                      <Eye className="h-3 w-3" />
+                    </button>
+                    <button
+                      onClick={() => handleEditUser(user.id)}
+                      className="p-2 bg-green-600/20 hover:bg-green-600/30 text-green-200 rounded transition-all duration-200"
+                      title="Edit User"
+                    >
+                      <Edit className="h-3 w-3" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </GlassCard>
       )}
@@ -1945,15 +2059,37 @@ export const Admin: React.FC = () => {
                       <label htmlFor="surveyEnabled" className="text-white/80 text-sm">Survey Enabled</label>
                     </div>
                     
-                    <div className="flex items-center space-x-3">
-                      <input
-                        type="checkbox"
-                        id="googleMapsEnabled"
-                        checked={selectedEvent.googleMapsEnabled}
-                        onChange={(e) => setSelectedEvent({...selectedEvent, googleMapsEnabled: e.target.checked})}
-                        className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
-                      />
-                      <label htmlFor="googleMapsEnabled" className="text-white/80 text-sm">Google Maps</label>
+                    <div className="space-y-2">
+                      <div className="flex items-center space-x-3">
+                        <input
+                          type="checkbox"
+                          id="googleMapsEnabled"
+                          checked={selectedEvent.googleMapsEnabled}
+                          onChange={(e) => setSelectedEvent({...selectedEvent, googleMapsEnabled: e.target.checked})}
+                          className="w-4 h-4 text-blue-600 bg-white/10 border-white/20 rounded"
+                        />
+                        <label htmlFor="googleMapsEnabled" className="text-white/80 text-sm">Enable Maps</label>
+                      </div>
+                      
+                      {selectedEvent.googleMapsEnabled && (
+                        <div className="ml-7 space-y-2">
+                          <label className="text-white/80 text-sm font-medium">Map Provider</label>
+                          <select
+                            value={selectedEvent.mapProvider}
+                            onChange={(e) => setSelectedEvent({...selectedEvent, mapProvider: e.target.value as 'google' | 'openstreetmap'})}
+                            className="w-full px-3 py-2 bg-white/10 border border-white/20 rounded-lg text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="google" className="bg-gray-800 text-white">Google Maps (requires API key)</option>
+                            <option value="openstreetmap" className="bg-gray-800 text-white">OpenStreetMap (free)</option>
+                          </select>
+                          <p className="text-white/60 text-xs">
+                            {selectedEvent.mapProvider === 'google' 
+                              ? 'Uses Google Maps API - requires valid API key'
+                              : 'Uses OpenStreetMap - no API key required'
+                            }
+                          </p>
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex items-center space-x-3">

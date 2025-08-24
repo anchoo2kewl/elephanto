@@ -4,11 +4,13 @@ import (
 	"database/sql"
 	"elephanto-events/middleware"
 	"elephanto-events/models"
+	"elephanto-events/services"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -16,11 +18,17 @@ import (
 )
 
 type VelvetHourHandler struct {
-	db *sql.DB
+	db  *sql.DB
+	hub *services.Hub
 }
 
 func NewVelvetHourHandler(db *sql.DB) *VelvetHourHandler {
 	return &VelvetHourHandler{db: db}
+}
+
+// SetWebSocketHub sets the WebSocket hub for broadcasting messages
+func (h *VelvetHourHandler) SetWebSocketHub(hub *services.Hub) {
+	h.hub = hub
 }
 
 // GetStatus returns the current Velvet Hour status for a user
@@ -72,8 +80,43 @@ func (h *VelvetHourHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 	)
 	
 	if err == sql.ErrNoRows {
+		// No active session, but user is attending - allow them to wait/connect
+		// Get event configuration even when no session exists
+		var config models.VelvetHourConfig
+		err = h.db.QueryRow(`
+			SELECT the_hour_round_duration, the_hour_break_duration, 
+				   the_hour_total_rounds
+			FROM events 
+			WHERE id = $1
+		`, eventID).Scan(
+			&config.RoundDuration, &config.BreakDuration,
+			&config.TotalRounds,
+		)
+		if err != nil {
+			log.Printf("Failed to get event config: %v", err)
+			// Use default values if config fetch fails
+			config = models.VelvetHourConfig{
+				RoundDuration:   10,
+				BreakDuration:   5,
+				TotalRounds:     4,
+			}
+		}
+		
+		// Calculate minimum participants based on total rounds (round-robin formula)
+		if config.TotalRounds%2 == 0 {
+			config.MinParticipants = config.TotalRounds + 1
+		} else {
+			config.MinParticipants = config.TotalRounds
+		}
+
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(models.VelvetHourStatusResponse{IsActive: false})
+		json.NewEncoder(w).Encode(models.VelvetHourStatusResponse{
+			IsActive: true, // Allow connection for presence tracking
+			Session: &models.VelvetHourSession{
+				EventID: eventID, // Provide eventId for WebSocket connection
+			},
+			Config: &config,
+		})
 		return
 	}
 	if err != nil {
@@ -140,12 +183,41 @@ func (h *VelvetHourHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Get event configuration
+	var config models.VelvetHourConfig
+	err = h.db.QueryRow(`
+		SELECT the_hour_round_duration, the_hour_break_duration, 
+			   the_hour_total_rounds
+		FROM events 
+		WHERE id = $1
+	`, eventID).Scan(
+		&config.RoundDuration, &config.BreakDuration,
+		&config.TotalRounds,
+	)
+	if err != nil {
+		log.Printf("Failed to get event config: %v", err)
+		// Use default values if config fetch fails
+		config = models.VelvetHourConfig{
+			RoundDuration:   10,
+			BreakDuration:   5,
+			TotalRounds:     4,
+		}
+	}
+	
+	// Calculate minimum participants based on total rounds (round-robin formula)
+	if config.TotalRounds%2 == 0 {
+		config.MinParticipants = config.TotalRounds + 1
+	} else {
+		config.MinParticipants = config.TotalRounds
+	}
+
 	response := models.VelvetHourStatusResponse{
 		IsActive:     true,
 		Session:      &session,
 		Participant:  participantPtr,
 		CurrentMatch: currentMatch,
 		TimeLeft:     timeLeft,
+		Config:       &config,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -204,6 +276,16 @@ func (h *VelvetHourHandler) JoinSession(w http.ResponseWriter, r *http.Request) 
 		log.Printf("Failed to add participant: %v", err)
 		http.Error(w, "Failed to join session", http.StatusInternalServerError)
 		return
+	}
+
+	// Broadcast participant joined event
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourParticipantJoined, map[string]interface{}{
+			"userId":    user.ID,
+			"userName":  user.Name,
+			"userEmail": user.Email,
+			"sessionId": sessionID,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -279,6 +361,27 @@ func (h *VelvetHourHandler) ConfirmMatch(w http.ResponseWriter, r *http.Request)
 		log.Printf("Failed to check confirmation status: %v", err)
 		http.Error(w, "Failed to check confirmation", http.StatusInternalServerError)
 		return
+	}
+
+	// Get event ID for WebSocket broadcasting
+	var eventID uuid.UUID
+	err = h.db.QueryRow(`
+		SELECT event_id FROM velvet_hour_sessions WHERE id = $1
+	`, match.SessionID).Scan(&eventID)
+	
+	if err != nil {
+		log.Printf("Failed to get event ID for WebSocket: %v", err)
+	}
+
+	// Broadcast match confirmation
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourMatchConfirmed, map[string]interface{}{
+			"matchId":  req.MatchID,
+			"userId":   user.ID,
+			"user1Id":  match.User1ID,
+			"user2Id":  match.User2ID,
+			"bothConfirmed": (match.User1ID == user.ID && match.ConfirmedUser2) || (match.User2ID == user.ID && match.ConfirmedUser1),
+		})
 	}
 
 	// If both confirmed, start the round timer
@@ -382,6 +485,30 @@ func (h *VelvetHourHandler) SubmitFeedback(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Get event ID for WebSocket broadcasting
+	var eventID uuid.UUID
+	err = h.db.QueryRow(`
+		SELECT s.event_id 
+		FROM velvet_hour_sessions s
+		JOIN velvet_hour_matches m ON s.id = m.session_id
+		WHERE m.id = $1
+	`, req.MatchID).Scan(&eventID)
+	
+	if err != nil {
+		log.Printf("Failed to get event ID for WebSocket: %v", err)
+	} else {
+		// Broadcast feedback submission
+		if h.hub != nil {
+			h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourFeedbackSubmitted, map[string]interface{}{
+				"matchId":        req.MatchID,
+				"fromUserId":     user.ID,
+				"toUserId":       toUserID,
+				"wantToConnect":  req.WantToConnect,
+				"feedbackReason": req.FeedbackReason,
+			})
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Feedback submitted successfully"})
 }
@@ -480,6 +607,35 @@ func (h *VelvetHourHandler) GetAdminStatus(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	// Get event configuration
+	var config models.VelvetHourConfig
+	err = h.db.QueryRow(`
+		SELECT the_hour_round_duration, the_hour_break_duration, 
+			   the_hour_total_rounds
+		FROM events 
+		WHERE id = $1
+	`, eventID).Scan(
+		&config.RoundDuration, &config.BreakDuration,
+		&config.TotalRounds,
+	)
+	if err != nil {
+		log.Printf("Failed to get event config: %v", err)
+		// Use default values if config fetch fails
+		config = models.VelvetHourConfig{
+			RoundDuration:   10,
+			BreakDuration:   5,
+			TotalRounds:     4,
+		}
+	}
+	
+	// Calculate minimum participants based on total rounds (round-robin formula)
+	// For R rounds: n_min = R if R is odd, R+1 if R is even
+	if config.TotalRounds%2 == 0 {
+		config.MinParticipants = config.TotalRounds + 1
+	} else {
+		config.MinParticipants = config.TotalRounds
+	}
+
 	// Determine if admin can start next round
 	canStartRound := false
 	if sessionPtr != nil && sessionPtr.Status == "waiting" {
@@ -493,6 +649,7 @@ func (h *VelvetHourHandler) GetAdminStatus(w http.ResponseWriter, r *http.Reques
 		CurrentMatches:  currentMatches,
 		CompletedRounds: 0,
 		CanStartRound:   canStartRound,
+		Config:          config,
 	}
 
 	// Calculate completed rounds
@@ -517,12 +674,20 @@ func (h *VelvetHourHandler) StartSession(w http.ResponseWriter, r *http.Request)
 
 	// Check if Velvet Hour has already been run for this event (one-time execution)
 	var theHourStarted bool
-	var minParticipants int
+	var totalRounds int
 	err = h.db.QueryRow(`
-		SELECT the_hour_started, the_hour_min_participants 
+		SELECT the_hour_started, the_hour_total_rounds 
 		FROM events 
 		WHERE id = $1
-	`, eventID).Scan(&theHourStarted, &minParticipants)
+	`, eventID).Scan(&theHourStarted, &totalRounds)
+	
+	// Calculate minimum participants based on total rounds (round-robin formula)
+	var minParticipants int
+	if totalRounds%2 == 0 {
+		minParticipants = totalRounds + 1
+	} else {
+		minParticipants = totalRounds
+	}
 	
 	if err != nil {
 		log.Printf("Failed to get event info: %v", err)
@@ -541,7 +706,7 @@ func (h *VelvetHourHandler) StartSession(w http.ResponseWriter, r *http.Request)
 		SELECT COUNT(*) 
 		FROM event_attendance ea 
 		JOIN users u ON ea.user_id = u.id 
-		WHERE ea.event_id = $1 AND ea.attending = true AND u.is_onboarded = true
+		WHERE ea.event_id = $1 AND ea.attending = true AND u.isonboarded = true
 	`, eventID).Scan(&attendingCount)
 	
 	if err != nil {
@@ -550,11 +715,19 @@ func (h *VelvetHourHandler) StartSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	
-	// For unique pairings across rounds, need enough people
-	// For 4 rounds, each person needs to meet 4 different people, so minimum is 8
-	requiredAttending := minParticipants * 2
-	if attendingCount < requiredAttending {
-		http.Error(w, fmt.Sprintf("Not enough attending users. Need at least %d attending users, but only %d are attending.", requiredAttending, attendingCount), http.StatusBadRequest)
+	// Check present users (actually connected via WebSocket)
+	presentCount := 0
+	if h.hub != nil {
+		presentCount = h.hub.GetPresentUserCount(eventID)
+	}
+	
+	// For unique pairings across rounds, use calculated minimum participants
+	// Round-robin formula: n_min = R if R is odd, R+1 if R is even
+	requiredAttending := minParticipants
+	
+	// Require that users are actually present (connected), not just marked as attending
+	if presentCount < requiredAttending {
+		http.Error(w, fmt.Sprintf("Not enough users present. Need at least %d users connected and ready, but only %d are currently present. (%d marked attending but not connected)", requiredAttending, presentCount, attendingCount-presentCount), http.StatusBadRequest)
 		return
 	}
 
@@ -591,6 +764,17 @@ func (h *VelvetHourHandler) StartSession(w http.ResponseWriter, r *http.Request)
 	
 	if err != nil {
 		log.Printf("Failed to update event status: %v", err)
+	}
+
+	// Broadcast session started event
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourSessionStarted, map[string]interface{}{
+			"sessionId":       sessionID,
+			"eventId":         eventID,
+			"status":          "waiting",
+			"attendingCount":  attendingCount,
+			"requiredCount":   requiredAttending,
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -668,6 +852,16 @@ func (h *VelvetHourHandler) StartRound(w http.ResponseWriter, r *http.Request) {
 		log.Printf("Failed to update session round: %v", err)
 		http.Error(w, "Failed to start round", http.StatusInternalServerError)
 		return
+	}
+
+	// Broadcast round started event
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourRoundStarted, map[string]interface{}{
+			"sessionId":   sessionID,
+			"roundNumber": nextRound,
+			"status":      "waiting",
+			"matchCount":  len(req.Matches),
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -807,6 +1001,19 @@ func (h *VelvetHourHandler) EndSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get session ID before ending it
+	var sessionID uuid.UUID
+	err = h.db.QueryRow(`
+		SELECT id FROM velvet_hour_sessions 
+		WHERE event_id = $1 AND is_active = true
+	`, eventID).Scan(&sessionID)
+	
+	if err != nil {
+		log.Printf("Failed to get session ID: %v", err)
+		http.Error(w, "No active session found", http.StatusNotFound)
+		return
+	}
+
 	// Update session to inactive
 	_, err = h.db.Exec(`
 		UPDATE velvet_hour_sessions 
@@ -828,6 +1035,15 @@ func (h *VelvetHourHandler) EndSession(w http.ResponseWriter, r *http.Request) {
 	
 	if err != nil {
 		log.Printf("Failed to update event status: %v", err)
+	}
+
+	// Broadcast session ended event
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourSessionEnded, map[string]interface{}{
+			"sessionId": sessionID,
+			"eventId":   eventID,
+			"status":    "completed",
+		})
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -871,11 +1087,7 @@ func (h *VelvetHourHandler) UpdateEventConfig(w http.ResponseWriter, r *http.Req
 		args = append(args, *req.TotalRounds)
 		argIndex++
 	}
-	if req.MinParticipants != nil {
-		updates = append(updates, fmt.Sprintf("the_hour_min_participants = $%d", argIndex))
-		args = append(args, *req.MinParticipants)
-		argIndex++
-	}
+	// MinParticipants is auto-calculated based on TotalRounds, not user-configurable
 
 	if len(updates) == 0 {
 		http.Error(w, "No fields to update", http.StatusBadRequest)
@@ -993,6 +1205,16 @@ func (h *VelvetHourHandler) ResetSession(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Broadcast status update after reset
+	if h.hub != nil {
+		h.hub.BroadcastToEvent(eventID, services.MessageTypeVelvetHourStatusUpdate, map[string]interface{}{
+			"eventId":        eventID,
+			"status":         "reset",
+			"sessionActive":  false,
+			"theHourStarted": false,
+		})
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Velvet Hour session reset successfully"})
 }
@@ -1009,13 +1231,21 @@ func (h *VelvetHourHandler) GetAttendanceStats(w http.ResponseWriter, r *http.Re
 	}
 
 	// Get event configuration
-	var minParticipants int
+	var totalRounds int
 	var theHourStarted bool
 	err = h.db.QueryRow(`
-		SELECT the_hour_min_participants, the_hour_started 
+		SELECT the_hour_total_rounds, the_hour_started 
 		FROM events 
 		WHERE id = $1
-	`, eventID).Scan(&minParticipants, &theHourStarted)
+	`, eventID).Scan(&totalRounds, &theHourStarted)
+	
+	// Calculate minimum participants based on total rounds (round-robin formula)
+	var minParticipants int
+	if totalRounds%2 == 0 {
+		minParticipants = totalRounds + 1
+	} else {
+		minParticipants = totalRounds
+	}
 	
 	if err != nil {
 		log.Printf("Failed to get event info: %v", err)
@@ -1029,7 +1259,7 @@ func (h *VelvetHourHandler) GetAttendanceStats(w http.ResponseWriter, r *http.Re
 		SELECT COUNT(*) 
 		FROM event_attendance ea 
 		JOIN users u ON ea.user_id = u.id 
-		WHERE ea.event_id = $1 AND ea.attending = true AND u.is_onboarded = true
+		WHERE ea.event_id = $1 AND ea.attending = true AND u.isonboarded = true
 	`, eventID).Scan(&attendingCount)
 	
 	if err != nil {
@@ -1038,20 +1268,199 @@ func (h *VelvetHourHandler) GetAttendanceStats(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Calculate required attendance (2x min participants for unique pairings)
-	requiredAttending := minParticipants * 2
-	canStart := attendingCount >= requiredAttending && !theHourStarted
+	// Get count of users actually present (WebSocket connected)
+	presentCount := 0
+	if h.hub != nil {
+		presentCount = h.hub.GetPresentUserCount(eventID)
+		log.Printf("DEBUG GetAttendanceStats: Hub returned present count: %d for event %s", presentCount, eventID)
+	} else {
+		log.Printf("DEBUG GetAttendanceStats: Hub is nil for event %s", eventID)
+	}
+
+	// Can start when we have minimum participants present AND session hasn't started
+	canStart := presentCount >= minParticipants && !theHourStarted
 
 	response := map[string]interface{}{
-		"attendingCount":    attendingCount,
-		"requiredCount":     requiredAttending,
-		"minParticipants":   minParticipants,
-		"canStart":          canStart,
+		"attendingCount":    attendingCount,     // Users marked as attending in DB
+		"presentCount":      presentCount,       // Users actually present (WebSocket connected)
+		"minParticipants":   minParticipants,    // Minimum needed for round-robin
+		"canStart":          canStart,           // Can start when present >= minimum
 		"alreadyStarted":    theHourStarted,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// GetAttendingUsers returns list of users marked as attending
+func (h *VelvetHourHandler) GetAttendingUsers(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	// Get users marked as attending
+	rows, err := h.db.Query(`
+		SELECT u.id, u.name, u.email, u.isonboarded
+		FROM event_attendance ea 
+		JOIN users u ON ea.user_id = u.id 
+		WHERE ea.event_id = $1 AND ea.attending = true AND u.isonboarded = true
+		ORDER BY u.name
+	`, eventID)
+	
+	if err != nil {
+		log.Printf("Failed to get attending users: %v", err)
+		http.Error(w, "Failed to fetch attending users", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var users []map[string]interface{}
+	for rows.Next() {
+		var user map[string]interface{} = make(map[string]interface{})
+		var id uuid.UUID
+		var name, email string
+		var isOnboarded bool
+		
+		err := rows.Scan(&id, &name, &email, &isOnboarded)
+		if err != nil {
+			log.Printf("Failed to scan attending user: %v", err)
+			continue
+		}
+		
+		user["id"] = id.String()
+		user["name"] = name
+		user["email"] = email
+		user["isOnboarded"] = isOnboarded
+		users = append(users, user)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+// GetPresentUsers returns list of users actually present (WebSocket connected)
+func (h *VelvetHourHandler) GetPresentUsers(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+
+	var users []map[string]interface{}
+	
+	if h.hub != nil {
+		// Get list of present user IDs from WebSocket hub
+		presentUserIDs := h.hub.GetPresentUsers(eventID)
+		
+		if len(presentUserIDs) > 0 {
+			// Convert UUIDs to strings for the query
+			userIDStrings := make([]string, len(presentUserIDs))
+			for i, id := range presentUserIDs {
+				userIDStrings[i] = id.String()
+			}
+			
+			// Build query with placeholders
+			placeholders := make([]string, len(userIDStrings))
+			args := make([]interface{}, len(userIDStrings))
+			for i, idStr := range userIDStrings {
+				placeholders[i] = fmt.Sprintf("$%d", i+1)
+				args[i] = idStr
+			}
+			
+			query := fmt.Sprintf(`
+				SELECT id, name, email, isonboarded
+				FROM users 
+				WHERE id IN (%s)
+				ORDER BY name
+			`, strings.Join(placeholders, ","))
+			
+			rows, err := h.db.Query(query, args...)
+			if err != nil {
+				log.Printf("Failed to get present users: %v", err)
+				http.Error(w, "Failed to fetch present users", http.StatusInternalServerError)
+				return
+			}
+			defer rows.Close()
+
+			for rows.Next() {
+				var user map[string]interface{} = make(map[string]interface{})
+				var id uuid.UUID
+				var name, email string
+				var isOnboarded bool
+				
+				err := rows.Scan(&id, &name, &email, &isOnboarded)
+				if err != nil {
+					log.Printf("Failed to scan present user: %v", err)
+					continue
+				}
+				
+				user["id"] = id.String()
+				user["name"] = name
+				user["email"] = email
+				user["isOnboarded"] = isOnboarded
+				users = append(users, user)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(users)
+}
+
+// ClearWebSocketConnections clears all WebSocket connections for an event (admin only)
+func (h *VelvetHourHandler) ClearWebSocketConnections(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	
+	if h.hub != nil {
+		disconnectedCount := h.hub.ClearAllConnections(eventID)
+		
+		response := map[string]interface{}{
+			"success": true,
+			"message": fmt.Sprintf("Cleared %d WebSocket connections", disconnectedCount),
+			"disconnectedCount": disconnectedCount,
+		}
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	} else {
+		http.Error(w, "WebSocket hub not available", http.StatusInternalServerError)
+	}
+}
+
+// GetWebSocketConnections returns current WebSocket connection info for debugging (admin only)
+func (h *VelvetHourHandler) GetWebSocketConnections(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	eventIDStr := vars["eventId"]
+	
+	eventID, err := uuid.Parse(eventIDStr)
+	if err != nil {
+		http.Error(w, "Invalid event ID", http.StatusBadRequest)
+		return
+	}
+	
+	if h.hub != nil {
+		connectionInfo := h.hub.GetConnectionInfo(eventID)
+		
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(connectionInfo)
+	} else {
+		http.Error(w, "WebSocket hub not available", http.StatusInternalServerError)
+	}
 }
 
 // Helper function to join strings

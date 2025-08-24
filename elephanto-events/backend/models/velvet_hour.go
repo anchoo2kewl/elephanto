@@ -103,6 +103,7 @@ type VelvetHourStatusResponse struct {
 	Participant  *VelvetHourParticipant `json:"participant,omitempty"`
 	CurrentMatch *VelvetHourMatch       `json:"currentMatch,omitempty"`
 	TimeLeft     *int                   `json:"timeLeft,omitempty"` // seconds remaining
+	Config       *VelvetHourConfig      `json:"config,omitempty"`
 }
 
 type ConfirmMatchRequest struct {
@@ -121,6 +122,14 @@ type AdminVelvetHourStatusResponse struct {
 	CurrentMatches  []VelvetHourMatch       `json:"currentMatches"`
 	CompletedRounds int                     `json:"completedRounds"`
 	CanStartRound   bool                    `json:"canStartRound"`
+	Config          VelvetHourConfig        `json:"config"`
+}
+
+type VelvetHourConfig struct {
+	RoundDuration   int `json:"roundDuration"`
+	BreakDuration   int `json:"breakDuration"`
+	TotalRounds     int `json:"totalRounds"`
+	MinParticipants int `json:"minParticipants"`
 }
 
 type StartRoundRequest struct {
@@ -138,5 +147,5 @@ type UpdateVelvetHourConfigRequest struct {
 	RoundDuration     *int `json:"roundDuration"`
 	BreakDuration     *int `json:"breakDuration"`
 	TotalRounds       *int `json:"totalRounds"`
-	MinParticipants   *int `json:"minParticipants"`
+	// MinParticipants is auto-calculated based on TotalRounds
 }

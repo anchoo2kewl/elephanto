@@ -21,6 +21,7 @@ type Event struct {
 	IsActive                  bool       `json:"isActive" db:"is_active"`
 	TicketURL                 *string    `json:"ticketUrl" db:"ticket_url"`
 	GoogleMapsEnabled         bool       `json:"googleMapsEnabled" db:"google_maps_enabled"`
+	MapProvider               string     `json:"mapProvider" db:"map_provider"`
 	CountdownEnabled          bool       `json:"countdownEnabled" db:"countdown_enabled"`
 	CocktailSelectionEnabled  bool       `json:"cocktailSelectionEnabled" db:"cocktail_selection_enabled"`
 	SurveyEnabled             bool       `json:"surveyEnabled" db:"survey_enabled"`
@@ -80,6 +81,7 @@ type CreateEventRequest struct {
 	Description               *string    `json:"description"`
 	TicketURL                 *string    `json:"ticketUrl"`
 	GoogleMapsEnabled         bool       `json:"googleMapsEnabled"`
+	MapProvider               *string    `json:"mapProvider"`
 	CountdownEnabled          bool       `json:"countdownEnabled"`
 	CocktailSelectionEnabled  bool       `json:"cocktailSelectionEnabled"`
 	SurveyEnabled             bool       `json:"surveyEnabled"`
@@ -105,6 +107,7 @@ type UpdateEventRequest struct {
 	Description               *string    `json:"description"`
 	TicketURL                 *string    `json:"ticketUrl"`
 	GoogleMapsEnabled         *bool      `json:"googleMapsEnabled"`
+	MapProvider               *string    `json:"mapProvider"`
 	CountdownEnabled          *bool      `json:"countdownEnabled"`
 	CocktailSelectionEnabled  *bool      `json:"cocktailSelectionEnabled"`
 	SurveyEnabled             *bool      `json:"surveyEnabled"`

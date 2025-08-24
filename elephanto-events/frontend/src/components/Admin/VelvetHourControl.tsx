@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { AdminVelvetHourControlProps, ManualMatch } from '@/types/velvet-hour';
 import { velvetHourApi } from '@/services/velvetHourApi';
 import { DraggableMatchmaking } from './DraggableMatchmaking';
-import { Play, Square, Settings, Users, Clock, Target, Calendar, RotateCcw } from 'lucide-react';
+import { useWebSocket, MESSAGE_TYPES } from '@/services/websocket';
+import { Play, Square, Settings, Users, Clock, Target, Calendar, RotateCcw, WifiOff } from 'lucide-react';
 
 export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
   eventId,
@@ -19,35 +20,218 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
   const [showConfig, setShowConfig] = useState(false);
   const [showMatchmaking, setShowMatchmaking] = useState(false);
   const [manualMatches, setManualMatches] = useState<ManualMatch[]>([]);
+  const [showAttendingModal, setShowAttendingModal] = useState(false);
+  const [showPresentModal, setShowPresentModal] = useState(false);
+  const [attendingUsers, setAttendingUsers] = useState<any[]>([]);
+  const [presentUsers, setPresentUsers] = useState<any[]>([]);
   const [config, setConfig] = useState({
     roundDuration: 10,
     breakDuration: 5,
-    totalRounds: 4,
-    minParticipants: 4
+    totalRounds: 4
   });
+
+
+  // Update config when status changes (load values from database)
+  useEffect(() => {
+    if (status?.config) {
+      setConfig({
+        roundDuration: status.config.roundDuration,
+        breakDuration: status.config.breakDuration,
+        totalRounds: status.config.totalRounds
+      });
+    }
+  }, [status?.config]);
+
+  // Calculate minimum participants based on total rounds (round-robin formula)
+  const calculateMinParticipants = (totalRounds: number) => {
+    // For R rounds: n_min = R if R is odd, R+1 if R is even
+    return totalRounds % 2 === 0 ? totalRounds + 1 : totalRounds;
+  };
   const [attendanceStats, setAttendanceStats] = useState<{
     attendingCount: number;
-    requiredCount: number;
+    presentCount: number;
     minParticipants: number;
     canStart: boolean;
     alreadyStarted: boolean;
   } | null>(null);
 
+  // WebSocket connection for real-time updates
+  const { isConnected, subscribe } = useWebSocket(eventId);
+
   // Fetch attendance stats
   useEffect(() => {
     const fetchAttendanceStats = async () => {
       try {
+        console.log('🔄 Fetching initial attendance stats for event:', eventId);
         const response = await velvetHourApi.getAttendanceStats(eventId);
+        console.log('📊 Initial attendance stats fetched:', response.data);
+        console.log('📍 Setting initial attendanceStats state to:', response.data);
         setAttendanceStats(response.data);
       } catch (error) {
-        console.error('Failed to fetch attendance stats:', error);
+        console.error('❌ Failed to fetch initial attendance stats:', error);
       }
     };
 
     if (eventId) {
       fetchAttendanceStats();
     }
-  }, [eventId, status.session?.status]); // Re-fetch when session status changes
+
+    // Listen for WebSocket connection events to refresh stats
+    const handleWebSocketConnected = (event: CustomEvent) => {
+      if (event.detail.eventId === eventId) {
+        console.log('🌐 WebSocket connected for event:', eventId, ', refreshing attendance stats');
+        // Small delay to let backend process the connection
+        setTimeout(() => {
+          console.log('⏰ Delayed fetch after WebSocket connection...');
+          fetchAttendanceStats();
+        }, 500); // Increased delay to 500ms to ensure backend has processed the connection
+      }
+    };
+
+    window.addEventListener('websocket-connected', handleWebSocketConnected as EventListener);
+
+    return () => {
+      window.removeEventListener('websocket-connected', handleWebSocketConnected as EventListener);
+    };
+  }, [eventId]); // Only re-fetch when eventId changes, not session status
+
+  // WebSocket event listeners for real-time updates
+  useEffect(() => {
+    // Set up subscriptions immediately when eventId is available, don't wait for isConnected
+    // This prevents race conditions where WebSocket connects and sends messages before React state updates
+    if (!eventId) return;
+
+    const unsubscribeAttendance = subscribe(MESSAGE_TYPES.ATTENDANCE_STATS_UPDATE, (data) => {
+      console.log('🔄 Attendance stats update received:', data);
+      console.log('🔍 Message type check - data.type:', data.type, 'data.presentCount:', data.presentCount);
+      
+      // Check if this is a presence update (real-time WebSocket connect/disconnect)
+      if (data.type === 'presence_update' && data.presentCount !== undefined) {
+        console.log('✅ Processing presence update - setting presentCount to:', data.presentCount);
+        // Update only the present count for real-time updates
+        setAttendanceStats(prev => {
+          console.log('📊 Previous attendance stats:', prev);
+          const updated = prev ? {
+            ...prev,
+            presentCount: data.presentCount,
+            canStart: data.presentCount >= prev.minParticipants && !prev.alreadyStarted
+          } : null;
+          console.log('📈 Updated attendance stats:', updated);
+          return updated;
+        });
+        
+        // If present users modal is open, refresh the user list
+        if (showPresentModal) {
+          const refreshPresentUsers = async () => {
+            try {
+              const response = await velvetHourApi.getPresentUsers(eventId);
+              setPresentUsers(response.data);
+              console.log('🔄 Refreshed present users modal due to presence update');
+            } catch (error) {
+              console.error('❌ Failed to refresh present users in modal:', error);
+            }
+          };
+          refreshPresentUsers();
+        }
+      } else {
+        console.log('🔄 Non-presence update, refreshing all stats from API');
+        // For other attendance updates, refresh all stats from API
+        const fetchAttendanceStats = async () => {
+          try {
+            const response = await velvetHourApi.getAttendanceStats(eventId);
+            console.log('📊 Fetched fresh attendance stats:', response.data);
+            setAttendanceStats(response.data);
+          } catch (error) {
+            console.error('❌ Failed to fetch attendance stats after update:', error);
+          }
+        };
+        fetchAttendanceStats();
+      }
+    });
+
+    const unsubscribeParticipantJoined = subscribe(MESSAGE_TYPES.VELVET_HOUR_PARTICIPANT_JOINED, (data) => {
+      console.log('Participant joined:', data);
+      // The parent component should refresh the status which will trigger re-render
+      // We can also manually refresh attendance stats here
+      const fetchAttendanceStats = async () => {
+        try {
+          const response = await velvetHourApi.getAttendanceStats(eventId);
+          setAttendanceStats(response.data);
+        } catch (error) {
+          console.error('Failed to fetch attendance stats after participant joined:', error);
+        }
+      };
+      fetchAttendanceStats();
+    });
+
+    const unsubscribeSessionStarted = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_STARTED, (data) => {
+      console.log('Velvet Hour session started:', data);
+      // Parent will handle session status updates
+    });
+
+    const unsubscribeRoundStarted = subscribe(MESSAGE_TYPES.VELVET_HOUR_ROUND_STARTED, (data) => {
+      console.log('Velvet Hour round started:', data);
+      // Parent will handle status updates
+    });
+
+    const unsubscribeSessionEnded = subscribe(MESSAGE_TYPES.VELVET_HOUR_SESSION_ENDED, (data) => {
+      console.log('Velvet Hour session ended:', data);
+      // Parent will handle status updates
+    });
+
+    const unsubscribeStatusUpdate = subscribe(MESSAGE_TYPES.VELVET_HOUR_STATUS_UPDATE, (data) => {
+      console.log('Velvet Hour status update:', data);
+      // Refresh attendance stats and let parent handle session status
+      const fetchAttendanceStats = async () => {
+        try {
+          const response = await velvetHourApi.getAttendanceStats(eventId);
+          setAttendanceStats(response.data);
+        } catch (error) {
+          console.error('Failed to fetch attendance stats after status update:', error);
+        }
+      };
+      fetchAttendanceStats();
+    });
+
+    // Handle user join/leave events for real-time attendance updates
+    const unsubscribeUserJoined = subscribe(MESSAGE_TYPES.USER_JOINED_EVENT, (data) => {
+      console.log('User joined event:', data);
+      const fetchAttendanceStats = async () => {
+        try {
+          const response = await velvetHourApi.getAttendanceStats(eventId);
+          setAttendanceStats(response.data);
+        } catch (error) {
+          console.error('Failed to fetch attendance stats after user joined:', error);
+        }
+      };
+      fetchAttendanceStats();
+    });
+
+    const unsubscribeUserLeft = subscribe(MESSAGE_TYPES.USER_LEFT_EVENT, (data) => {
+      console.log('User left event:', data);
+      const fetchAttendanceStats = async () => {
+        try {
+          const response = await velvetHourApi.getAttendanceStats(eventId);
+          setAttendanceStats(response.data);
+        } catch (error) {
+          console.error('Failed to fetch attendance stats after user left:', error);
+        }
+      };
+      fetchAttendanceStats();
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      unsubscribeAttendance();
+      unsubscribeParticipantJoined();
+      unsubscribeSessionStarted();
+      unsubscribeRoundStarted();
+      unsubscribeSessionEnded();
+      unsubscribeStatusUpdate();
+      unsubscribeUserJoined();
+      unsubscribeUserLeft();
+    };
+  }, [eventId, subscribe, showPresentModal]);
 
   // Calculate max possible matches
   const maxMatches = Math.floor(status.participants.length / 2);
@@ -67,6 +251,64 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
     setShowConfig(false);
   };
 
+  const handleShowAttendingUsers = async () => {
+    try {
+      const response = await velvetHourApi.getAttendingUsers(eventId);
+      setAttendingUsers(response.data);
+      setShowAttendingModal(true);
+    } catch (error) {
+      console.error('Failed to fetch attending users:', error);
+    }
+  };
+
+  const handleShowPresentUsers = async () => {
+    try {
+      const response = await velvetHourApi.getPresentUsers(eventId);
+      setPresentUsers(response.data);
+      setShowPresentModal(true);
+    } catch (error) {
+      console.error('Failed to fetch present users:', error);
+    }
+  };
+
+  const [showClearDialog, setShowClearDialog] = useState(false);
+
+  const handleClearConnections = async () => {
+    setShowClearDialog(false);
+    
+    try {
+      const response = await velvetHourApi.clearWebSocketConnections(eventId);
+      console.log('Cleared connections:', response.data);
+      
+      // Refresh attendance stats to show updated count
+      const statsResponse = await velvetHourApi.getAttendanceStats(eventId);
+      setAttendanceStats(statsResponse.data);
+      
+    } catch (error) {
+      console.error('Failed to clear connections:', error);
+    }
+  };
+
+  // Handle escape key for modals
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (showAttendingModal) {
+          setShowAttendingModal(false);
+        }
+        if (showPresentModal) {
+          setShowPresentModal(false);
+        }
+        if (showClearDialog) {
+          setShowClearDialog(false);
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [showAttendingModal, showPresentModal, showClearDialog]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -81,6 +323,10 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             <div className="flex items-center space-x-2">
               <Clock className="h-4 w-4" />
               <span>{new Date(eventDate).toLocaleDateString()} at {eventTime}</span>
+            </div>
+            <div className="flex items-center space-x-1">
+              <div className={`h-2 w-2 rounded-full ${isConnected ? 'bg-green-400' : 'bg-red-400'}`}></div>
+              <span className="text-xs">{isConnected ? 'Live' : 'Offline'}</span>
             </div>
           </div>
           <p className="text-white/60 text-sm">
@@ -104,6 +350,13 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             <Settings className="h-4 w-4" />
             <span>Settings</span>
           </button>
+          <button
+            onClick={() => setShowClearDialog(true)}
+            className="flex items-center space-x-3 px-6 py-3 bg-red-600/20 hover:bg-red-600/30 text-red-200 rounded-lg border border-red-400/30 transition-all duration-200 font-semibold"
+          >
+            <WifiOff className="h-5 w-5" />
+            <span>⚠️ Disconnect All Users</span>
+          </button>
         </div>
       </div>
 
@@ -111,7 +364,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
       {showConfig && (
         <div className="bg-white/10 rounded-xl p-6 border border-white/20">
           <h3 className="text-lg font-semibold text-white mb-4">Velvet Hour Configuration</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
             <div>
               <label className="block text-sm text-white/70 mb-2">Round Duration (minutes)</label>
               <input
@@ -145,16 +398,18 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
                 max="8"
               />
             </div>
-            <div>
-              <label className="block text-sm text-white/70 mb-2">Minimum Participants</label>
-              <input
-                type="number"
-                value={config.minParticipants}
-                onChange={(e) => setConfig({ ...config, minParticipants: parseInt(e.target.value) })}
-                className="w-full px-3 py-2 bg-white/10 border border-white/30 rounded-lg text-white"
-                min="2"
-                max="20"
-              />
+          </div>
+          <div className="mb-4">
+            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-white/70">Minimum Participants Required:</span>
+                <span className="text-lg font-semibold text-white">
+                  {calculateMinParticipants(config.totalRounds)} people
+                </span>
+              </div>
+              <p className="text-xs text-white/50 mt-2">
+                Automatically calculated for {config.totalRounds} rounds using round-robin matching
+              </p>
             </div>
           </div>
           <div className="flex space-x-3">
@@ -195,7 +450,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
             <Target className="h-5 w-5 text-green-400" />
           </div>
           <p className="text-2xl font-bold text-white mb-1">
-            {status.session?.currentRound || 0} / {config.totalRounds}
+            {status.session?.currentRound || 0} / {status.config?.totalRounds || config.totalRounds}
           </p>
           <p className="text-sm text-white/70">
             {status.currentMatches.length} active matches
@@ -228,17 +483,26 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div className="text-center">
+            <button 
+              onClick={handleShowAttendingUsers}
+              className="text-center bg-white/5 hover:bg-white/10 rounded-lg p-3 transition-all duration-200"
+            >
               <p className="text-2xl font-bold text-white">{attendanceStats.attendingCount}</p>
-              <p className="text-sm text-white/70">Users Attending</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{attendanceStats.requiredCount}</p>
-              <p className="text-sm text-white/70">Required to Start</p>
-            </div>
-            <div className="text-center">
-              <p className="text-2xl font-bold text-white">{attendanceStats.minParticipants}</p>
-              <p className="text-sm text-white/70">Min Participants</p>
+              <p className="text-sm text-white/70">Marked Attending</p>
+              <p className="text-xs text-white/40 mt-1">Click to view details</p>
+            </button>
+            <button 
+              onClick={handleShowPresentUsers}
+              className="text-center bg-white/5 hover:bg-white/10 rounded-lg p-3 transition-all duration-200"
+            >
+              <p className="text-2xl font-bold text-green-400">{attendanceStats.presentCount || 0}</p>
+              <p className="text-sm text-white/70">Actually Present</p>
+              <p className="text-xs text-white/40 mt-1">Click to view details</p>
+            </button>
+            <div className="text-center bg-white/5 rounded-lg p-3">
+              <p className="text-2xl font-bold text-cyan-400">{attendanceStats.minParticipants}</p>
+              <p className="text-sm text-white/70">Minimum Required</p>
+              <p className="text-xs text-white/40 mt-1">Auto-calculated</p>
             </div>
           </div>
 
@@ -247,7 +511,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
               <p className="text-yellow-200 text-sm">
                 {attendanceStats.alreadyStarted 
                   ? "⚠️ Velvet Hour has already been run for this event. Use 'Reset Session' to run again."
-                  : `⚠️ Need ${attendanceStats.requiredCount - attendanceStats.attendingCount} more attending users to start Velvet Hour.`
+                  : `⚠️ Need ${attendanceStats.minParticipants - (attendanceStats.presentCount || 0)} more users to be present and connected. (${attendanceStats.attendingCount - (attendanceStats.presentCount || 0)} marked attending but not connected)`
                 }
               </p>
             </div>
@@ -278,7 +542,7 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
               <p className="text-xs text-white/60 mt-2 max-w-xs">
                 {attendanceStats.alreadyStarted 
                   ? "Session already completed"
-                  : `Only ${attendanceStats.attendingCount} of ${attendanceStats.requiredCount} required users are attending`
+                  : `Only ${attendanceStats.presentCount || 0} of ${attendanceStats.minParticipants} minimum users are present`
                 }
               </p>
             )}
@@ -428,6 +692,119 @@ export const VelvetHourControl: React.FC<AdminVelvetHourControlProps> = ({
                 </p>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Attending Users Modal */}
+      {showAttendingModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowAttendingModal(false);
+            }
+          }}
+        >
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 max-h-96 overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white">Users Marked as Attending</h3>
+              <button
+                onClick={() => setShowAttendingModal(false)}
+                className="text-white/60 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2">
+              {attendingUsers.length > 0 ? (
+                attendingUsers.map((user) => (
+                  <div key={user.id} className="bg-white/5 rounded-lg p-3">
+                    <p className="text-white font-medium">{user.name}</p>
+                    <p className="text-white/60 text-sm">{user.email}</p>
+                    <p className="text-white/40 text-xs">
+                      {user.isOnboarded ? 'Onboarded' : 'Not onboarded'}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-white/60 text-center py-4">No users marked as attending</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Present Users Modal */}
+      {showPresentModal && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowPresentModal(false);
+            }
+          }}
+        >
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 max-h-96 overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-white">Users Actually Present</h3>
+              <button
+                onClick={() => setShowPresentModal(false)}
+                className="text-white/60 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="space-y-2">
+              {presentUsers.length > 0 ? (
+                presentUsers.map((user) => (
+                  <div key={user.id} className="bg-white/5 rounded-lg p-3">
+                    <p className="text-white font-medium">{user.name}</p>
+                    <p className="text-white/60 text-sm">{user.email}</p>
+                    <p className="text-white/40 text-xs">Connected via WebSocket</p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-white/60 text-center py-4">No users currently connected</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Connections Confirmation Dialog */}
+      {showClearDialog && (
+        <div 
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowClearDialog(false);
+            }
+          }}
+        >
+          <div className="bg-slate-800 rounded-xl p-6 max-w-md w-full mx-4 border border-red-400/30">
+            <div className="flex items-center space-x-3 mb-4">
+              <WifiOff className="h-6 w-6 text-red-400" />
+              <h3 className="text-lg font-semibold text-white">Disconnect All Users</h3>
+            </div>
+            <p className="text-white/80 mb-6">
+              This will immediately disconnect all users from the WebSocket connection. 
+              They will receive a notification and need to refresh their page to reconnect.
+            </p>
+            <div className="flex space-x-3">
+              <button
+                onClick={() => setShowClearDialog(false)}
+                className="flex-1 px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/20 transition-all duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleClearConnections}
+                className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-lg font-semibold transition-all duration-200"
+              >
+                Disconnect All
+              </button>
+            </div>
           </div>
         </div>
       )}

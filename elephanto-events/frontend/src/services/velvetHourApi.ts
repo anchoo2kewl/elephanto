@@ -48,4 +48,16 @@ export const velvetHourApi = {
     
   resetSession: (eventId: string) => 
     api.post(`/admin/events/${eventId}/velvet-hour/reset`),
+    
+  getAttendingUsers: (eventId: string) => 
+    api.get(`/admin/events/${eventId}/velvet-hour/attending-users`),
+    
+  getPresentUsers: (eventId: string) => 
+    api.get(`/admin/events/${eventId}/velvet-hour/present-users`),
+    
+  clearWebSocketConnections: (eventId: string) => 
+    api.post(`/admin/events/${eventId}/velvet-hour/clear-connections`),
+    
+  getWebSocketConnectionInfo: (eventId: string) => 
+    api.get(`/admin/events/${eventId}/velvet-hour/connection-info`),
 };

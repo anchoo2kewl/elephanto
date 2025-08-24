@@ -37,6 +37,7 @@ export interface Event {
   isActive: boolean;
   ticketUrl?: string;
   googleMapsEnabled: boolean;
+  mapProvider?: 'google' | 'openstreetmap';
   countdownEnabled: boolean;
   cocktailSelectionEnabled: boolean;
   surveyEnabled: boolean;

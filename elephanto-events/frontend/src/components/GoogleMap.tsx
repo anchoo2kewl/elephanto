@@ -51,13 +51,6 @@ export const GoogleMap: React.FC<GoogleMapProps> = ({
         title={`Map showing ${address}`}
       />
       
-      {/* Overlay for opening in Google Maps */}
-      <button
-        onClick={() => window.open(`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`, '_blank')}
-        className="absolute top-2 right-2 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 px-3 py-1 rounded-md text-sm font-medium shadow-lg hover:shadow-xl transition-shadow"
-      >
-        Open in Maps
-      </button>
     </div>
   );
 };

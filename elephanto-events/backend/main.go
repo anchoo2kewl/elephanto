@@ -68,6 +68,15 @@ func main() {
 	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
 	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
 	velvetHourHandler := handlers.NewVelvetHourHandler(database.DB)
+	
+	// Initialize WebSocket hub and handler
+	wsHub := services.NewWebSocketHub()
+	go wsHub.Run() // Start the WebSocket hub in a goroutine
+	wsHandler := handlers.NewWebSocketHandler(wsHub, cfg.JWTSecret, tokenHandler)
+	
+	// Pass WebSocket hub to handlers that need to broadcast messages
+	velvetHourHandler.SetWebSocketHub(wsHub)
+	eventHandler.SetWebSocketHub(wsHub)
 
 	r := mux.NewRouter()
 
@@ -111,6 +120,9 @@ func main() {
 	protected.HandleFunc("/velvet-hour/join", velvetHourHandler.JoinSession).Methods("POST")
 	protected.HandleFunc("/velvet-hour/confirm-match", velvetHourHandler.ConfirmMatch).Methods("POST")
 	protected.HandleFunc("/velvet-hour/feedback", velvetHourHandler.SubmitFeedback).Methods("POST")
+	
+	// WebSocket endpoint for real-time updates (handles auth internally)
+	api.HandleFunc("/ws/{eventId}", wsHandler.HandleWebSocket).Methods("GET")
 	
 	// Event attendance endpoints (requires auth)
 	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
@@ -161,6 +173,10 @@ func main() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/attending-users", velvetHourHandler.GetAttendingUsers).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/present-users", velvetHourHandler.GetPresentUsers).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")
@@ -261,6 +277,15 @@ func serve() {
 	eventDetailHandler := handlers.NewEventDetailHandler(database.DB)
 	eventFAQHandler := handlers.NewEventFAQHandler(database.DB)
 	velvetHourHandler := handlers.NewVelvetHourHandler(database.DB)
+	
+	// Initialize WebSocket hub and handler
+	wsHub := services.NewWebSocketHub()
+	go wsHub.Run() // Start the WebSocket hub in a goroutine
+	wsHandler := handlers.NewWebSocketHandler(wsHub, cfg.JWTSecret, tokenHandler)
+	
+	// Pass WebSocket hub to handlers that need to broadcast messages
+	velvetHourHandler.SetWebSocketHub(wsHub)
+	eventHandler.SetWebSocketHub(wsHub)
 
 	r := mux.NewRouter()
 
@@ -304,6 +329,9 @@ func serve() {
 	protected.HandleFunc("/velvet-hour/join", velvetHourHandler.JoinSession).Methods("POST")
 	protected.HandleFunc("/velvet-hour/confirm-match", velvetHourHandler.ConfirmMatch).Methods("POST")
 	protected.HandleFunc("/velvet-hour/feedback", velvetHourHandler.SubmitFeedback).Methods("POST")
+	
+	// WebSocket endpoint for real-time updates (handles auth internally)
+	api.HandleFunc("/ws/{eventId}", wsHandler.HandleWebSocket).Methods("GET")
 	
 	// Event attendance endpoints (requires auth)
 	protected.HandleFunc("/events/attendance", eventHandler.GetUserAttendance).Methods("GET")
@@ -354,6 +382,10 @@ func serve() {
 	admin.HandleFunc("/events/{eventId}/velvet-hour/end", velvetHourHandler.EndSession).Methods("POST")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/config", velvetHourHandler.UpdateEventConfig).Methods("PUT")
 	admin.HandleFunc("/events/{eventId}/velvet-hour/reset", velvetHourHandler.ResetSession).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/attending-users", velvetHourHandler.GetAttendingUsers).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/present-users", velvetHourHandler.GetPresentUsers).Methods("GET")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/clear-connections", velvetHourHandler.ClearWebSocketConnections).Methods("POST")
+	admin.HandleFunc("/events/{eventId}/velvet-hour/connection-info", velvetHourHandler.GetWebSocketConnections).Methods("GET")
 	
 	// Audit logs
 	admin.HandleFunc("/audit-logs", adminHandler.GetAuditLogs).Methods("GET")

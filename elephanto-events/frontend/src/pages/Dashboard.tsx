@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '@/components/GlassCard';
 import { CountdownTimer } from '@/components/CountdownTimer';
 import { GoogleMap } from '@/components/GoogleMap';
+import { OpenStreetMap } from '@/components/OpenStreetMap';
 import { CocktailDialog } from '@/components/CocktailDialog';
 import { SurveyDialog, SurveyData } from '@/components/SurveyDialog';
 import { useToast } from '@/components/Toast';
@@ -286,10 +287,14 @@ export const Dashboard: React.FC = () => {
               />
             )}
             
-            {/* Show Google Map for location section if enabled */}
+            {/* Show Map for location section if enabled */}
             {detail.sectionType === 'location' && event.googleMapsEnabled && event.address && (
               <div className="mt-6">
-                <GoogleMap address={event.address} className="w-full" />
+                {event.mapProvider === 'openstreetmap' ? (
+                  <OpenStreetMap address={event.address} className="w-full" />
+                ) : (
+                  <GoogleMap address={event.address} className="w-full" />
+                )}
               </div>
             )}
           </GlassCard>

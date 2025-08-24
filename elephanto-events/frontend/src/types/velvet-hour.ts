@@ -63,6 +63,7 @@ export interface VelvetHourStatusResponse {
   participant?: VelvetHourParticipant;
   currentMatch?: VelvetHourMatch;
   timeLeft?: number; // seconds remaining
+  config?: VelvetHourConfig;
 }
 
 export interface SubmitFeedbackRequest {
@@ -71,12 +72,20 @@ export interface SubmitFeedbackRequest {
   feedbackReason: string; // humor, confidence, listening, no_connection
 }
 
+export interface VelvetHourConfig {
+  roundDuration: number;
+  breakDuration: number;
+  totalRounds: number;
+  minParticipants: number;
+}
+
 export interface AdminVelvetHourStatusResponse {
   session?: VelvetHourSession;
   participants: VelvetHourParticipant[];
   currentMatches: VelvetHourMatch[];
   completedRounds: number;
   canStartRound: boolean;
+  config: VelvetHourConfig;
 }
 
 export interface StartRoundRequest {
@@ -94,7 +103,7 @@ export interface UpdateVelvetHourConfigRequest {
   roundDuration?: number;
   breakDuration?: number;
   totalRounds?: number;
-  minParticipants?: number;
+  // minParticipants is auto-calculated based on totalRounds
 }
 
 // Frontend component props types
@@ -103,6 +112,8 @@ export interface VelvetHourWaitingProps {
   onJoin: () => void;
   participantCount: number;
   hasJoined: boolean;
+  isConnected: boolean;
+  config?: VelvetHourConfig;
 }
 
 export interface VelvetHourMatchProps {
