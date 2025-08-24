@@ -1,0 +1,120 @@
+# ElephantTO Events - Development Guide
+
+## Important Development Information
+
+### Development Environment Setup
+- **Always use `dev.sh` to control all processes** - do not start services manually
+- **Hot reload is enabled by default** for both frontend (Vite) and backend (air)
+- **Never restart the Go server manually** - hot reload handles code changes automatically
+
+### Development Workflow
+```bash
+# Start all services with hot reload
+./dev.sh start
+
+# Check status
+./dev.sh status
+
+# View logs (real-time)
+./dev.sh follow backend
+./dev.sh follow frontend
+
+# Stop all services
+./dev.sh stop
+```
+
+### Test Credentials for Development
+
+#### Admin User (PAT Token)
+- **Email**: anchoo2kewl@gmail.com  
+- **PAT Token**: `pat_f9ae3dff368a4d023bdd4284332e6d9922778c22d3dd73ccd6337b72ade55834`
+- **Usage**: Use this PAT for API testing via curl or admin access
+
+#### Testing API with curl
+```bash
+# Health check
+curl http://localhost:8080/api/health
+
+# Admin API example (using PAT)
+curl -H "Authorization: Bearer pat_f9ae3dff368a4d023bdd4284332e6d9922778c22d3dd73ccd6337b72ade55834" \
+     http://localhost:8080/api/admin/events
+
+# WebSocket testing
+# Connect to WebSocket with PAT: ws://localhost:8080/api/ws/{eventId}?token=pat_...
+```
+
+### Service URLs
+- **Frontend**: http://localhost:3000
+- **Backend API**: http://localhost:8080/api  
+- **Admin Dashboard**: http://localhost:3000/admin
+- **Velvet Hour Control**: http://localhost:3000/admin (click Velvet Hour tab)
+- **Database**: localhost:5432
+- **Mailpit (Email testing)**: http://localhost:8025
+
+### Key Architecture Notes
+
+#### WebSocket Real-Time Updates
+- All admin dashboard updates use WebSocket for real-time synchronization
+- When users connect/disconnect, presence counts update immediately
+- "Disconnect All Users" function affects only non-admin dashboard connections
+- Admin dashboard maintains separate connections and continues receiving updates
+
+#### Velvet Hour System
+- **Admin Dashboard** (`/admin`): Stays connected, shows live participant counts
+- **Velvet Hour Page** (`/velvet-hour`): User-facing page that gets disconnected with "Disconnect All Users"
+- **Real-time counting**: Uses WebSocket presence detection for accurate live counts
+- **Attendance vs Presence**: Attendance = marked in DB, Presence = actually connected via WebSocket
+
+### Development Commands Reference
+
+#### Service Management
+```bash
+./dev.sh start [backend|frontend|infrastructure|all]  # Start services
+./dev.sh stop [backend|frontend|infrastructure|all]   # Stop services  
+./dev.sh restart [backend|frontend|infrastructure|all] # Restart services
+./dev.sh status                                        # Show all service status
+```
+
+#### Debugging & Logs
+```bash
+./dev.sh logs backend [n]     # Show last n lines (default: 50)
+./dev.sh follow backend       # Follow logs real-time
+./dev.sh test                 # Test all service endpoints
+./dev.sh cleanup              # Clean up PID and log files
+```
+
+#### Docker Compose (Alternative)
+```bash
+./dev.sh dc start             # Start all services in Docker
+./dev.sh dc stop              # Stop all Docker services
+./dev.sh dc logs backend      # View container logs
+./dev.sh dc exec backend bash # Shell into container
+```
+
+### Hot Reload Setup
+- **Backend**: Uses `air` (Go hot reload tool) - changes auto-detected and server restarted
+- **Frontend**: Uses Vite dev server - changes reflected immediately in browser
+- **No manual restarts needed** - just save files and changes apply automatically
+
+### Important Files
+- `dev.sh` - Main development script (controls all processes)
+- `backend/.air.toml` - Hot reload configuration for Go backend
+- `.env.local` - Local environment variables (copied to backend/.env)
+- `docker-compose.yml` - Infrastructure services (PostgreSQL, Mailpit)
+
+### Troubleshooting
+- **Port conflicts**: Use `./dev.sh stop` to clean up, then restart
+- **Service not responding**: Check logs with `./dev.sh logs <service>`
+- **Database issues**: Restart infrastructure with `./dev.sh restart infrastructure`
+- **WebSocket issues**: Check both backend logs and browser network tab
+
+### Security Notes
+- PAT tokens are for development only
+- JWT tokens expire and need refresh for long sessions
+- WebSocket connections authenticate via query parameter or header
+- Admin functions require proper role verification
+
+---
+
+**Last Updated**: 2025-08-24
+**Maintained by**: Development Team

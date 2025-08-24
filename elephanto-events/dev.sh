@@ -245,7 +245,7 @@ start_backend() {
         return 1
     fi
     
-    echo -e "${YELLOW}🚀 Starting backend (native mode)...${NC}"
+    echo -e "${YELLOW}🚀 Starting backend with hot reload (native mode)...${NC}"
     
     # Ensure infrastructure is running
     if ! docker-compose ps postgres 2>/dev/null | grep -q "Up"; then
@@ -259,16 +259,25 @@ start_backend() {
     # Set mode
     set_mode "native"
     
-    # Start backend in background
-    cd backend
-    go run main.go > "../$BACKEND_LOG_FILE" 2>&1 &
-    echo $! > "../$BACKEND_PID_FILE"
-    cd ..
+    # Check if air (Go hot reload) is available
+    if command -v air &> /dev/null; then
+        echo -e "  🔥 Using air for hot reload..."
+        cd backend
+        air > "../$BACKEND_LOG_FILE" 2>&1 &
+        echo $! > "../$BACKEND_PID_FILE"
+        cd ..
+    else
+        echo -e "  ⚠️  air not found, using standard go run (no hot reload)..."
+        cd backend
+        go run main.go > "../$BACKEND_LOG_FILE" 2>&1 &
+        echo $! > "../$BACKEND_PID_FILE"
+        cd ..
+    fi
     
     # Wait for backend to start
     sleep 3
     if curl -s http://localhost:$BACKEND_PORT/api/health > /dev/null 2>&1; then
-        echo -e "  ✅ Backend started (PID: $(cat $BACKEND_PID_FILE))"
+        echo -e "  ✅ Backend started with hot reload (PID: $(cat $BACKEND_PID_FILE))"
     else
         echo -e "  ❌ Backend failed to start. Check logs: ./dev.sh logs backend"
         rm -f "$BACKEND_PID_FILE"
@@ -334,7 +343,7 @@ start_frontend() {
         return 1
     fi
     
-    echo -e "${YELLOW}🚀 Starting frontend (native mode)...${NC}"
+    echo -e "${YELLOW}🚀 Starting frontend with hot reload (native mode)...${NC}"
     
     # Check if node_modules exists
     if [ ! -d "frontend/node_modules" ]; then
@@ -351,7 +360,7 @@ start_frontend() {
     echo $! > "../$FRONTEND_PID_FILE"
     cd ..
     
-    echo -e "  ✅ Frontend starting (PID: $(cat $FRONTEND_PID_FILE))"
+    echo -e "  ✅ Frontend started with hot reload (PID: $(cat $FRONTEND_PID_FILE))"
     echo -e "  ⏳ Frontend will be available at http://localhost:$FRONTEND_PORT"
 }
 

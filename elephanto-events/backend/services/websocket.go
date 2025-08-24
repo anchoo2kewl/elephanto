@@ -226,6 +226,7 @@ func (h *Hub) GetRoomCount(eventID uuid.UUID) int {
 }
 
 // GetPresentUsers returns a list of user IDs currently connected to an event
+// Includes all users (both admin and non-admin) as potential participants
 func (h *Hub) GetPresentUsers(eventID uuid.UUID) []uuid.UUID {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
@@ -234,7 +235,7 @@ func (h *Hub) GetPresentUsers(eventID uuid.UUID) []uuid.UUID {
 	if room, exists := h.Rooms[eventID]; exists {
 		userSet := make(map[uuid.UUID]bool)
 		for _, client := range room {
-			// Deduplicate users (in case of multiple connections)
+			// Include all connections (both admin and non-admin can participate)
 			userSet[client.UserID] = true
 		}
 		for userID := range userSet {
@@ -245,7 +246,7 @@ func (h *Hub) GetPresentUsers(eventID uuid.UUID) []uuid.UUID {
 }
 
 // GetPresentUserCount returns the number of unique users currently connected to an event
-// Includes all users (both admin and non-admin) to match what's displayed in the participant modals
+// Includes all users (both admin and non-admin) as potential participants
 func (h *Hub) GetPresentUserCount(eventID uuid.UUID) int {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
@@ -255,6 +256,7 @@ func (h *Hub) GetPresentUserCount(eventID uuid.UUID) int {
 		log.Printf("DEBUG GetPresentUserCount: Event %s has %d total connections:", eventID, len(room))
 		for clientID, client := range room {
 			log.Printf("DEBUG GetPresentUserCount: - Client %s: User %s (Admin: %v)", clientID, client.UserID, client.IsAdmin)
+			// Count all connections (both admin and non-admin can participate)
 			userSet[client.UserID] = true
 		}
 		count := len(userSet)
@@ -266,12 +268,14 @@ func (h *Hub) GetPresentUserCount(eventID uuid.UUID) int {
 }
 
 // IsUserPresent checks if a specific user is currently connected to an event
+// Includes both admin and non-admin users as they can both participate
 func (h *Hub) IsUserPresent(eventID uuid.UUID, userID uuid.UUID) bool {
 	h.mutex.RLock()
 	defer h.mutex.RUnlock()
 
 	if room, exists := h.Rooms[eventID]; exists {
 		for _, client := range room {
+			// Consider all connections as "present" (both admin and non-admin can participate)
 			if client.UserID == userID {
 				return true
 			}
@@ -285,15 +289,15 @@ func getCurrentTimestamp() int64 {
 	return time.Now().UnixMilli()
 }
 
-// getPresentUserCountLocked counts all present users for an event (assumes mutex is already locked)
-// Count all present users (both admin and non-admin) to match HTTP API and modal
+// getPresentUserCountLocked counts present users for an event (assumes mutex is already locked)
+// Includes all users (both admin and non-admin) as potential participants
 func (h *Hub) getPresentUserCountLocked(eventID uuid.UUID) int {
 	room, exists := h.Rooms[eventID]
 	if !exists {
 		return 0
 	}
 	
-	// Count all unique users (both admin and non-admin, deduplicate in case a user has multiple connections)
+	// Count all unique users (both admin and non-admin can participate)
 	userSet := make(map[uuid.UUID]bool)
 	for _, client := range room {
 		userSet[client.UserID] = true
@@ -309,12 +313,18 @@ func (h *Hub) broadcastPresenceUpdate(eventID uuid.UUID, presentCount int) {
 	h.logCurrentConnections(eventID)
 	
 	// Use goroutine to avoid blocking since we're already holding the mutex
+	// Add a small delay to ensure frontend has time to set up WebSocket subscriptions
 	go func() {
+		// Small delay to prevent race conditions with frontend subscription setup
+		time.Sleep(100 * time.Millisecond)
+		
 		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
 			"presentCount": presentCount,
 			"eventId":      eventID,
 			"type":         "presence_update",
 		})
+		
+		log.Printf("DEBUG: Broadcasted presence update - presentCount: %d to admins for event %s", presentCount, eventID)
 	}()
 }
 
@@ -394,7 +404,8 @@ func (h *Hub) checkStaleConnections() {
 	}
 }
 
-// ClearAllConnections forcibly disconnects all clients from an event room
+// ClearAllConnections forcibly disconnects non-admin users from an event room
+// Admin users stay connected to continue monitoring
 func (h *Hub) ClearAllConnections(eventID uuid.UUID) int {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
@@ -405,20 +416,21 @@ func (h *Hub) ClearAllConnections(eventID uuid.UUID) int {
 		return 0
 	}
 	
-	// First, send presence update to admins showing 0 users (before disconnecting)
-	// This ensures admin UI updates immediately to show 0 present users
-	go func() {
-		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
-			"presentCount": 0,
-			"eventId":      eventID,
-			"type":         "presence_update",
-		})
-	}()
+	// Count non-admin clients for reporting
+	var nonAdminClients []*Client
+	for _, client := range room {
+		// Disconnect if user is NOT an admin
+		if !client.IsAdmin {
+			nonAdminClients = append(nonAdminClients, client)
+		}
+	}
 	
-	// Wait a moment for presence update to be sent
-	time.Sleep(50 * time.Millisecond)
+	if len(nonAdminClients) == 0 {
+		log.Printf("No non-admin connections to clear for event %s", eventID)
+		return 0
+	}
 	
-	// Send disconnect notification to all clients
+	// Send disconnect notification to non-admin clients only
 	disconnectMessage := WebSocketMessage{
 		Type:      "ADMIN_DISCONNECT",
 		EventID:   eventID,
@@ -429,12 +441,12 @@ func (h *Hub) ClearAllConnections(eventID uuid.UUID) int {
 		Timestamp: getCurrentTimestamp(),
 	}
 	
-	for _, client := range room {
+	for _, client := range nonAdminClients {
 		select {
 		case client.Send <- disconnectMessage:
-			log.Printf("Sent disconnect notification to client %s", client.ID)
+			log.Printf("Sent disconnect notification to non-admin client %s (Admin: %v)", client.ID, client.IsAdmin)
 		default:
-			log.Printf("Failed to send disconnect notification to client %s", client.ID)
+			log.Printf("Failed to send disconnect notification to non-admin client %s (Admin: %v)", client.ID, client.IsAdmin)
 		}
 	}
 	
@@ -443,19 +455,39 @@ func (h *Hub) ClearAllConnections(eventID uuid.UUID) int {
 	time.Sleep(100 * time.Millisecond)
 	h.mutex.Lock()
 	
-	// Now forcibly disconnect all clients
+	// Now forcibly disconnect non-admin clients only
 	var disconnectedCount int
 	for clientID, client := range room {
-		log.Printf("Forcibly disconnecting client %s from event %s", clientID, eventID)
-		close(client.Send)
-		client.Conn.Close()
-		disconnectedCount++
+		// Disconnect if user is NOT an admin
+		if !client.IsAdmin {
+			log.Printf("Forcibly disconnecting non-admin client %s from event %s (Admin: %v)", clientID, eventID, client.IsAdmin)
+			close(client.Send)
+			client.Conn.Close()
+			delete(room, clientID)
+			disconnectedCount++
+		}
 	}
 	
-	// Remove the entire room
-	delete(h.Rooms, eventID)
+	// After disconnecting non-admin users, send updated presence count to remaining admins
+	// Count remaining users (should only be admin users now)
+	presentCount := 0
+	userSet := make(map[uuid.UUID]bool)
+	for _, client := range room {
+		userSet[client.UserID] = true
+	}
+	presentCount = len(userSet)
 	
-	log.Printf("Cleared %d connections from event %s", disconnectedCount, eventID)
+	// Send updated presence count to admin users immediately
+	go func() {
+		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
+			"presentCount": presentCount,
+			"eventId":      eventID,
+			"type":         "presence_update",
+		})
+		log.Printf("DEBUG: Sent presence update to admins after disconnect - presentCount: %d", presentCount)
+	}()
+	
+	log.Printf("Cleared %d non-admin connections from event %s, keeping admin connections", disconnectedCount, eventID)
 	
 	return disconnectedCount
 }
@@ -527,6 +559,22 @@ func (h *Hub) HandleWebSocket(w http.ResponseWriter, r *http.Request, eventID uu
 
 	// Register client
 	h.Register <- client
+
+	// Send an immediate presence update after connection is fully established
+	// This helps ensure admin dashboards update immediately
+	go func() {
+		// Wait a moment for registration to complete
+		time.Sleep(200 * time.Millisecond)
+		
+		presentCount := h.GetPresentUserCount(eventID)
+		log.Printf("DEBUG: Sending immediate post-connection presence update - count: %d for event: %s", presentCount, eventID)
+		
+		h.BroadcastToAdmins(eventID, MessageTypeAttendanceStatsUpdate, map[string]interface{}{
+			"presentCount": presentCount,
+			"eventId":      eventID,
+			"type":         "presence_update",
+		})
+	}()
 
 	// Start goroutines for reading and writing
 	go h.writePump(client)
